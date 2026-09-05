@@ -344,19 +344,58 @@ async def approve_decision(action_id: str, req: DecisionActionRequest):
                 policy_decision_id=getattr(action, "policy_decision_id", None) or f"pol_{action.id}",
                 status=ApprovalState.PENDING,
             )
-            await runtime_env.approval_repo.create(pending_appr)
+            try:
+                await runtime_env.approval_repo.create(pending_appr)
+            except Exception:
+                pass  # Concurrently created by racing request
 
         if runtime_env.approval_service:
-            approval = await runtime_env.approval_service.approve_human_request(
-                approval_id=approval_id,
-                organization_id=task.organization_id,
-                task_id=task.id,
-                agent_run_id=run.id,
-                tool_name=tool_name,
-                reviewed_by="User",
-                modified_arguments=effective_args,
-                notes=req.notes or "Approved by user.",
-            )
+            try:
+                approval = await runtime_env.approval_service.approve_human_request(
+                    approval_id=approval_id,
+                    organization_id=task.organization_id,
+                    task_id=task.id,
+                    agent_run_id=run.id,
+                    tool_name=tool_name,
+                    reviewed_by="User",
+                    modified_arguments=effective_args,
+                    notes=req.notes or "Approved by user.",
+                )
+            except (ValueError, RuntimeError) as e:
+                # Racing/duplicate approval attempt: inspect idempotency cache before failing
+                err_text = str(e)
+                tool_spec = runtime_env.tools.get(tool_name)
+                is_idemp = tool_spec.spec.is_idempotent if tool_spec else False
+                idemp_key = runtime_env.engine.idempotency.compute_key(
+                    task_id=f"tsk_{target_com.id}",
+                    agent_run_id=f"run_{action.id}",
+                    tool_name=tool_name,
+                    arguments=effective_args,
+                    is_tool_idempotent=is_idemp,
+                )
+                cached_obs = None
+                if hasattr(runtime_env.engine.idempotency, "reserve_or_get"):
+                    reservation = await runtime_env.engine.idempotency.reserve_or_get(
+                        key=idemp_key,
+                        tool_name=tool_name,
+                        execution_id=f"exec_{uuid4().hex[:8]}",
+                    )
+                    cached_obs = reservation.cached_observation
+                else:
+                    cached_obs = runtime_env.engine.idempotency.get(idemp_key)
+
+                if cached_obs:
+                    return {
+                        "success": True,
+                        "message": f"Action '{action_id}' already approved and dispatched (idempotent replay).",
+                        "dispatch_details": cached_obs.data if isinstance(cached_obs.data, dict) else {"result": cached_obs.data},
+                        "commitment": target_com.model_dump(mode="json"),
+                    }
+
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Approval rejected or already consumed (concurrent/duplicate request): {err_text}",
+                )
         else:
             approval = await runtime_env.approval_repo.get(approval_id)
             if approval:
@@ -389,9 +428,12 @@ async def approve_decision(action_id: str, req: DecisionActionRequest):
 
     if not obs.success:
         err_msg = obs.error or "Tool execution denied by runtime governance."
+        if "already consumed" in err_msg.lower() or "concurrent" in err_msg.lower():
+            raise HTTPException(status_code=409, detail=f"Concurrent approval or execution conflict: {err_msg}")
         if "Permission denied" in err_msg or "Policy denied" in err_msg or "denied" in err_msg.lower():
             raise HTTPException(status_code=403, detail=f"Runtime execution denied: {err_msg}")
         raise HTTPException(status_code=500, detail=f"Runtime tool execution failed: {err_msg}")
+
 
     # 5. Runtime execution succeeded -> Authoritatively update Covenant domain state
     action.status = ActionStatus.APPROVED

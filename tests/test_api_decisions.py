@@ -1,15 +1,17 @@
-"""Integration tests for Covenant Decision API endpoints with authoritative runtime execution."""
-
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import pytest
 import httpx
 from fastapi import FastAPI
 
+from agent_runtime.core.contracts.approval import HumanApprovalRequest
 from agent_runtime.core.contracts.event import EventType
 from agent_runtime.core.contracts.policy import PolicyDecision, PolicyEvaluationContext
+from agent_runtime.core.contracts.tool import ToolRequest, ToolSpec
 from agent_runtime.core.interfaces.policy import IPolicyRule
-from agent_runtime.core.state.enums import PolicyDecisionType
+from agent_runtime.core.interfaces.tool import ITool
+from agent_runtime.core.state.enums import ApprovalState, ExecutionSafety, PolicyDecisionType
 from typing import Optional
 from covenant.api.routes import (
     router,
@@ -436,4 +438,235 @@ async def test_f_verification_remains_separate(api_client):
     assert resolved_com.resolution_timestamp is not None
     assert resolved_com.verification_result is not None
     assert resolved_com.verification_result.is_verified is True
+
+
+# ==============================================================================
+# Step 3: Concurrency Hardening & Race Invariant Tests (Phases 5 & 6)
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_concurrent_approval_single_winner(api_client):
+    """Proves that under simultaneous racing approval attempts, exactly one request wins (200),
+    the other is rejected (409 Conflict), exactly one side effect occurs, and approval is consumed once."""
+    client, test_repo, test_runtime_env = api_client
+
+    com = _create_sample_commitment("com_conc_1", "act_conc_1")
+    await test_repo.save(com)
+
+    initial_emails = len(workspace_store.emails)
+
+    # Wrap tool with a slight async yield to simulate real I/O and allow coroutine interleaving
+    orig_tool = test_runtime_env.tools.get("send_followup")
+
+    class YieldingToolWrapper:
+        def __init__(self, inner):
+            self.inner = inner
+            self.spec = inner.spec
+
+        async def execute(self, *args, **kwargs):
+            await asyncio.sleep(0.02)
+            return await self.inner.execute(*args, **kwargs)
+
+    test_runtime_env.tools.register(YieldingToolWrapper(orig_tool))
+
+    # Fire two simultaneous approval requests
+    res1, res2 = await asyncio.gather(
+        client.post("/api/decisions/act_conc_1/approve", json={"notes": "Caller A"}),
+        client.post("/api/decisions/act_conc_1/approve", json={"notes": "Caller B"}),
+    )
+
+    # Restore original tool
+    test_runtime_env.tools.register(orig_tool)
+
+    status_codes = [res1.status_code, res2.status_code]
+    assert 200 in status_codes, f"Expected a 200 winner, got {status_codes}"
+    assert 409 in status_codes, f"Expected a 409 conflict, got {status_codes}"
+
+    # Invariant 1: Exactly one side effect occurred
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    # Invariant 2: In approval repository, approval is single-use EXECUTED
+    appr = await test_runtime_env.approval_repo.get("appr_act_conc_1")
+    assert appr is not None
+    assert appr.status == ApprovalState.EXECUTED
+
+    # Invariant 3: Exactly one execution completed event
+    events = await test_runtime_env.event_sink.list_events(task_id="tsk_com_conc_1")
+    exec_events = [e for e in events if e.event_type == EventType.TOOL_EXECUTION_COMPLETED]
+    assert len(exec_events) == 1
+
+
+
+@pytest.mark.asyncio
+async def test_duplicate_approval_after_consumption(api_client):
+    """Proves that attempting to approve an action whose token has already been consumed returns
+    idempotent replay via HTTP and cannot re-execute side effects or re-approve via runtime."""
+    client, test_repo, test_runtime_env = api_client
+
+    com = _create_sample_commitment("com_conc_2", "act_conc_2")
+    await test_repo.save(com)
+
+    initial_emails = len(workspace_store.emails)
+
+    # Initial approval and dispatch
+    res1 = await client.post("/api/decisions/act_conc_2/approve", json={"notes": "Initial approval"})
+    assert res1.status_code == 200
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    appr = await test_runtime_env.approval_repo.get("appr_act_conc_2")
+    assert appr.status == ApprovalState.EXECUTED
+
+    # Duplicate approval attempt after consumption
+    res2 = await client.post("/api/decisions/act_conc_2/approve", json={"notes": "Duplicate approval"})
+    assert res2.status_code == 200
+    assert res2.json()["success"] is True
+
+    # Side effect was NOT duplicated
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    # Direct runtime approval service call strictly rejects consumed request
+    with pytest.raises(ValueError, match="already been executed"):
+        await test_runtime_env.approval_service.approve_human_request(
+            approval_id="appr_act_conc_2",
+            organization_id=test_runtime_env.organization_id,
+            task_id="tsk_com_conc_2",
+            agent_run_id="run_act_conc_2",
+            tool_name="send_followup",
+            reviewed_by="Attacker",
+        )
+
+
+@pytest.mark.asyncio
+async def test_concurrent_dispatch_does_not_duplicate_side_effect(api_client):
+    """Multiple concurrent callers dispatching the same decision concurrently cannot duplicate side effect."""
+    client, test_repo, test_runtime_env = api_client
+
+    com = _create_sample_commitment("com_conc_3", "act_conc_3")
+    await test_repo.save(com)
+
+    initial_emails = len(workspace_store.emails)
+
+    # 5 simultaneous approval calls
+    responses = await asyncio.gather(
+        *(client.post("/api/decisions/act_conc_3/approve", json={"notes": f"Attempt {i}"}) for i in range(5))
+    )
+
+    codes = [r.status_code for r in responses]
+    for c in codes:
+        assert c in (200, 409), f"Unexpected status code {c}"
+
+    # Side effect occurred exactly once
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    # Telemetry records exactly 1 execution completion
+    events = await test_runtime_env.event_sink.list_events(task_id="tsk_com_conc_3")
+    exec_events = [e for e in events if e.event_type == EventType.TOOL_EXECUTION_COMPLETED]
+    assert len(exec_events) == 1
+
+
+@pytest.mark.asyncio
+async def test_approval_state_is_monotonic_under_race(api_client):
+    """Proves that under high concurrency, the approval state machine transitions monotonically:
+    PENDING -> APPROVED -> EXECUTED, and cannot regress or duplicate."""
+    _, _, test_runtime_env = api_client
+
+    appr_id = "appr_mono_test"
+    req = ToolRequest(tool_name="send_followup", arguments={"test": True})
+    appr = HumanApprovalRequest(
+        approval_id=appr_id,
+        organization_id=test_runtime_env.organization_id,
+        task_id="tsk_mono",
+        agent_run_id="run_mono",
+        tool_request=req,
+        policy_decision_id="pol_mono",
+        status=ApprovalState.PENDING,
+    )
+    await test_runtime_env.approval_repo.create(appr)
+
+    # 10 concurrent reviewers attempting to atomic_approve
+    approve_results = await asyncio.gather(
+        *(test_runtime_env.approval_repo.atomic_approve(appr_id, reviewed_by=f"Reviewer_{i}") for i in range(10))
+    )
+    # Exactly ONE can transition PENDING -> APPROVED
+    assert approve_results.count(True) == 1
+    assert approve_results.count(False) == 9
+
+    mid_state = await test_runtime_env.approval_repo.get(appr_id)
+    assert mid_state.status == ApprovalState.APPROVED
+
+    # 10 concurrent workers attempting to atomic_consume
+    consume_results = await asyncio.gather(
+        *(test_runtime_env.approval_repo.atomic_consume(appr_id) for _ in range(10))
+    )
+    # Exactly ONE can transition APPROVED -> EXECUTED
+    assert consume_results.count(True) == 1
+    assert consume_results.count(False) == 9
+
+    final_state = await test_runtime_env.approval_repo.get(appr_id)
+    assert final_state.status == ApprovalState.EXECUTED
+
+    # Any further approve or consume attempts fail
+    assert await test_runtime_env.approval_repo.atomic_approve(appr_id, reviewed_by="Late") is False
+    assert await test_runtime_env.approval_repo.atomic_consume(appr_id) is False
+
+
+@pytest.mark.asyncio
+async def test_in_flight_racing_approval_prevented_by_idempotency(api_client):
+    """Phase 6: Proves that while an approved execution is in-flight, a racing/duplicate retry
+    is blocked/rejected by idempotency reservation, preventing duplicate side effects."""
+    client, test_repo, test_runtime_env = api_client
+
+    com = _create_sample_commitment("com_flight_1", "act_flight_1")
+    await test_repo.save(com)
+
+    initial_emails = len(workspace_store.emails)
+
+    # Wrap the send_followup tool to introduce deterministic in-flight pause
+    orig_tool = test_runtime_env.tools.get("send_followup")
+    in_flight_event = asyncio.Event()
+    release_event = asyncio.Event()
+
+    class InFlightToolWrapper:
+        def __init__(self, inner):
+            self.inner = inner
+            self.spec = inner.spec
+
+        async def execute(self, *args, **kwargs):
+            in_flight_event.set()
+            await release_event.wait()
+            return await self.inner.execute(*args, **kwargs)
+
+    test_runtime_env.tools.register(InFlightToolWrapper(orig_tool))
+
+    # Launch Request 1 which pauses while executing the tool
+    task1 = asyncio.create_task(
+        client.post("/api/decisions/act_flight_1/approve", json={"notes": "Request 1 in-flight"})
+    )
+
+    # Wait until Request 1 is actively inside the tool execution
+    await in_flight_event.wait()
+
+    # Now Request 2 arrives while Request 1 is still in-flight
+    res2 = await client.post("/api/decisions/act_flight_1/approve", json={"notes": "Request 2 retry while in-flight"})
+    assert res2.status_code == 409
+    assert "already consumed" in res2.json()["detail"].lower() or "concurrent" in res2.json()["detail"].lower()
+
+    # Now release Request 1 to finish execution
+    release_event.set()
+    res1 = await task1
+    assert res1.status_code == 200
+    assert res1.json()["success"] is True
+
+    # Invariant: exactly 1 side effect occurred
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    # Request 3 arrives after completion -> gets idempotent replay
+    res3 = await client.post("/api/decisions/act_flight_1/approve", json={"notes": "Request 3 post-completion"})
+    assert res3.status_code == 200
+    assert res3.json()["success"] is True
+    assert len(workspace_store.emails) == initial_emails + 1
+
+    # Restore original tool
+    test_runtime_env.tools.register(orig_tool)
+
 
