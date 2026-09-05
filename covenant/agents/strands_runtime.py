@@ -313,12 +313,20 @@ class CovenantStrandsAgentRunner:
         commitment_repo: AbstractCommitmentRepository,
         event_repo: AbstractEventRepository,
         use_ollama: bool = False,
+        model: Optional[Model] = None,
     ):
         self.commitment_repo = commitment_repo
         self.event_repo = event_repo
         
         # Select model
-        self.model = OllamaStrandsModel() if use_ollama else LocalDeterministicStrandsModel()
+        if model:
+            self.model = model
+        elif use_ollama:
+            self.model = OllamaStrandsModel()
+        else:
+            from covenant.llm import get_strands_model
+            self.model = get_strands_model()
+
 
         # Instantiate real Strands Agents
         self.supervisor_agent = Agent(

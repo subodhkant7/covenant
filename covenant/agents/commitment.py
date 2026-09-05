@@ -10,7 +10,9 @@ from covenant.agents.strands_runtime import (
     LocalDeterministicStrandsModel,
     OllamaStrandsModel,
 )
+from covenant.llm import get_strands_model
 from covenant.domain.enums import (
+
     CommitmentCategory,
     CommitmentStatus,
     EvidenceSourceType,
@@ -50,7 +52,15 @@ class CommitmentAgent(BaseAgent):
         if strands_agent:
             self.strands_agent = strands_agent
         else:
-            model = OllamaStrandsModel() if (llm and hasattr(llm, "model_name") and "ollama" in str(llm.model_name).lower()) else LocalDeterministicStrandsModel()
+            if hasattr(llm, "strands_model") and getattr(llm, "strands_model", None):
+                model = getattr(llm, "strands_model")
+            elif llm and hasattr(llm, "model_name") and "ollama" in str(llm.model_name).lower():
+                model = OllamaStrandsModel()
+            elif llm and hasattr(llm, "model_name") and "bedrock" in str(llm.model_name).lower():
+                model = get_strands_model("bedrock")
+            else:
+                model = get_strands_model()
+
             self.strands_agent = Agent(
                 model=model,
                 tools=COVENANT_STRANDS_TOOLS,
@@ -62,6 +72,7 @@ class CommitmentAgent(BaseAgent):
                     "you extract the promisor, promisee, direction, deliverable, and due date."
                 ),
             )
+
 
     async def extract_statement(
         self,

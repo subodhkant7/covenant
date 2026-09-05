@@ -1,5 +1,7 @@
 """Global application settings and configuration."""
 
+import os
+from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 
@@ -21,5 +23,13 @@ class Settings(BaseModel):
     system_user_email: str = "alex@northstarstudio.com"
     auto_scan_interval_seconds: int = 300
 
+    # Model Provider Configuration
+    model_provider: str = Field(default_factory=lambda: os.getenv("COVENANT_MODEL_PROVIDER", "deterministic").lower())
+    bedrock_model_id: Optional[str] = Field(default_factory=lambda: os.getenv("COVENANT_BEDROCK_MODEL_ID"))
+    aws_region: str = Field(default_factory=lambda: os.getenv("COVENANT_AWS_REGION") or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+    bedrock_temperature: float = Field(default_factory=lambda: float(os.getenv("COVENANT_BEDROCK_TEMPERATURE", "0.1")))
+    bedrock_max_tokens: Optional[int] = Field(default_factory=lambda: int(os.getenv("COVENANT_BEDROCK_MAX_TOKENS")) if os.getenv("COVENANT_BEDROCK_MAX_TOKENS") else None)
+
 
 settings = Settings()
+

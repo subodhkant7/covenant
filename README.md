@@ -37,6 +37,30 @@ covenant/
 
 ---
 
+## Model Providers
+
+Covenant integrates with language models through the native **Strands Agents SDK**, providing a pluggable, bounded reasoning layer with strict offline safety:
+
+- **Deterministic Provider (`COVENANT_MODEL_PROVIDER=deterministic`) [Default]**:
+  - The default provider for testing, development, and CI environments.
+  - Requires zero network access, zero cloud credentials, and zero GPU overhead.
+  - Provides deterministic, reproducible reasoning and structured JSON outputs for all Covenant workflows.
+- **Ollama / Local Provider (`COVENANT_MODEL_PROVIDER=ollama`)**:
+  - Connects to local Ollama servers (e.g. `http://localhost:11434`, `llama3:latest`).
+  - Supports local model testing when offline Ollama instances are running.
+- **Amazon Bedrock Provider (`COVENANT_MODEL_PROVIDER=bedrock`)**:
+  - Utilizes the native Strands `BedrockModel` (`strands.models.bedrock.BedrockModel`) without custom API wrappers.
+  - Configurable via environment variables:
+    - `COVENANT_MODEL_PROVIDER=bedrock`
+    - `COVENANT_BEDROCK_MODEL_ID=anthropic.claude-3-haiku-20240307-v1:0` (example)
+    - `COVENANT_AWS_REGION=us-east-1` (defaults to standard AWS region)
+  - Uses the standard AWS credential resolution chain (environment variables, IAM roles, AWS profiles).
+  - Never stores credentials in the codebase, tests, or git history.
+  - Live Bedrock access is optional: the entire test suite and lifecycle remain offline-safe.
+  - Note: In environments where an AWS account-level restriction is present (e.g. AWS Error 002: Access to Bedrock models is not allowed for this account), the runtime gracefully logs the block without compromising offline execution or governance boundaries.
+
+---
+
 ## Monitoring Control Plane
 
 Covenant exposes its bounded autonomous monitoring cycle through an explicit operational control plane:
