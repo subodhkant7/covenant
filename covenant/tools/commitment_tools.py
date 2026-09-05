@@ -118,6 +118,8 @@ class CalculateRiskTool(BaseTool):
             "days_overdue": {"type": "number"},
             "is_blocking_downstream": {"type": "boolean"},
             "financial_impact": {"type": "number"},
+            "elapsed_seconds": {"type": "number"},
+            "hours_overdue": {"type": "number"},
         },
         "required": ["is_overdue"],
     }
@@ -128,22 +130,49 @@ class CalculateRiskTool(BaseTool):
         days_overdue: float = 0.0,
         is_blocking_downstream: bool = False,
         financial_impact: float = 0.0,
+        elapsed_seconds: Optional[float] = None,
+        hours_overdue: Optional[float] = None,
         **kwargs: Any,
     ) -> ToolResult:
-        if not is_overdue:
-            return ToolResult(success=True, data={"risk": RiskLevel.LOW.value, "rationale": "Commitment is on track."})
+        if elapsed_seconds is not None:
+            if elapsed_seconds > 0:
+                is_overdue = True
+                if days_overdue == 0.0:
+                    days_overdue = elapsed_seconds / 86400.0
+            else:
+                is_overdue = False
+                days_overdue = 0.0
 
-        if days_overdue >= 5 or (is_blocking_downstream and days_overdue >= 2) or financial_impact > 10000:
+        if not is_overdue:
+            return ToolResult(
+                success=True,
+                data={
+                    "risk": RiskLevel.LOW.value,
+                    "rationale": "Commitment is on track.",
+                    "is_overdue": False,
+                    "days_overdue": 0.0,
+                },
+            )
+
+        if days_overdue >= 5.0 or (is_blocking_downstream and days_overdue >= 2.0) or financial_impact > 10000:
             risk = RiskLevel.HIGH
             rationale = f"Overdue by {days_overdue:.1f} days with downstream blocking impact or financial risk."
-        elif days_overdue >= 2 or is_blocking_downstream:
+        elif days_overdue >= 2.0 or is_blocking_downstream:
             risk = RiskLevel.MEDIUM
             rationale = f"Overdue by {days_overdue:.1f} days; attention required to prevent escalation."
         else:
             risk = RiskLevel.LOW
             rationale = "Recently overdue (under 48 hours), standard follow-up recommended."
 
-        return ToolResult(success=True, data={"risk": risk.value, "rationale": rationale})
+        return ToolResult(
+            success=True,
+            data={
+                "risk": risk.value,
+                "rationale": rationale,
+                "is_overdue": True,
+                "days_overdue": days_overdue,
+            },
+        )
 
 
 def register_commitment_tools():

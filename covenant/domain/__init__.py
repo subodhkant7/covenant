@@ -23,6 +23,10 @@ from covenant.domain.models import (
     ProposedAction,
     VerificationRequirement,
     VerificationResult,
+    calculate_overdue_duration,
+    ensure_utc,
+    set_clock_override,
+    time_freeze,
     utc_now,
 )
 
@@ -33,6 +37,7 @@ __all__ = [
     "AgentEvent",
     "Commitment",
     "CommitmentCategory",
+    "CommitmentHealth",
     "CommitmentStatus",
     "ConfidenceLevel",
     "EvidenceReference",
@@ -45,5 +50,9 @@ __all__ = [
     "RiskLevel",
     "VerificationRequirement",
     "VerificationResult",
+    "calculate_overdue_duration",
+    "ensure_utc",
+    "set_clock_override",
+    "time_freeze",
     "utc_now",
 ]

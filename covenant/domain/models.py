@@ -1,7 +1,6 @@
-"""Domain models for Covenant commitment-resolution system."""
-
+import contextvars
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, computed_field
@@ -20,10 +19,87 @@ from covenant.domain.enums import (
     RiskLevel,
 )
 
+_clock_override: contextvars.ContextVar[Optional[datetime]] = contextvars.ContextVar("_clock_override", default=None)
+
+
+def ensure_utc(dt: Union[datetime, str]) -> datetime:
+    """Normalize any datetime or ISO string to a timezone-aware UTC datetime."""
+    if isinstance(dt, str):
+        dt_clean = dt.replace("Z", "+00:00") if dt.endswith("Z") else dt
+        dt = datetime.fromisoformat(dt_clean)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 
 def utc_now() -> datetime:
-    """Return current UTC timestamp with timezone awareness."""
+    """Return current UTC timestamp with timezone awareness.
+    
+    If a clock override or time freeze is active, returns the frozen instant.
+    """
+    override = _clock_override.get()
+    if override is not None:
+        return ensure_utc(override)
     return datetime.now(timezone.utc)
+
+
+def set_clock_override(dt: Optional[Union[datetime, str]]) -> Optional[datetime]:
+    """Set or clear the clock override for the current context."""
+    if dt is None:
+        _clock_override.set(None)
+        return None
+    val = ensure_utc(dt)
+    _clock_override.set(val)
+    return val
+
+
+class time_freeze:
+    """Context manager for deterministic time execution."""
+
+    def __init__(self, frozen_time: Union[datetime, str]):
+        self.frozen_time = ensure_utc(frozen_time)
+        self.token = None
+
+    def __enter__(self) -> datetime:
+        self.token = _clock_override.set(self.frozen_time)
+        return self.frozen_time
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.token is not None:
+            _clock_override.reset(self.token)
+
+
+def calculate_overdue_duration(
+    due_date: Optional[Union[datetime, str]],
+    reference_time: Optional[Union[datetime, str]] = None,
+) -> Dict[str, Any]:
+    """Canonical overdue calculation:
+    
+    - Normalizes both due_date and reference_time to UTC.
+    - Calculates exact elapsed seconds.
+    - Determines is_overdue strictly when elapsed_seconds > 0.
+    - Derives hours_overdue and days_overdue from elapsed_seconds.
+    """
+    if due_date is None:
+        return {
+            "is_overdue": False,
+            "elapsed_seconds": 0.0,
+            "hours_overdue": 0.0,
+            "days_overdue": 0.0,
+        }
+
+    due_utc = ensure_utc(due_date)
+    ref_utc = ensure_utc(reference_time) if reference_time is not None else utc_now()
+
+    elapsed = (ref_utc - due_utc).total_seconds()
+    is_overdue = elapsed > 0.0
+
+    return {
+        "is_overdue": is_overdue,
+        "elapsed_seconds": elapsed,
+        "hours_overdue": max(0.0, elapsed / 3600.0) if is_overdue else 0.0,
+        "days_overdue": max(0.0, elapsed / 86400.0) if is_overdue else 0.0,
+    }
 
 
 class Party(BaseModel):
@@ -240,9 +316,25 @@ class Commitment(BaseModel):
             return False
         if self.status in [CommitmentStatus.RESOLVED, CommitmentStatus.CANCELLED, CommitmentStatus.REJECTED]:
             return False
-        now = utc_now()
-        due = self.due_date if self.due_date.tzinfo else self.due_date.replace(tzinfo=timezone.utc)
-        return now > due
+        return calculate_overdue_duration(self.due_date, utc_now())["is_overdue"]
+
+    @computed_field
+    def days_overdue(self) -> float:
+        """Normalized duration in days that this commitment has been overdue."""
+        if not self.due_date or self.status in [CommitmentStatus.RESOLVED, CommitmentStatus.CANCELLED, CommitmentStatus.REJECTED]:
+            return 0.0
+        return calculate_overdue_duration(self.due_date, utc_now())["days_overdue"]
+
+    @computed_field
+    def hours_overdue(self) -> float:
+        """Normalized duration in hours that this commitment has been overdue."""
+        if not self.due_date or self.status in [CommitmentStatus.RESOLVED, CommitmentStatus.CANCELLED, CommitmentStatus.REJECTED]:
+            return 0.0
+        return calculate_overdue_duration(self.due_date, utc_now())["hours_overdue"]
+
+    def overdue_duration(self, reference_time: Optional[Union[datetime, str]] = None) -> Dict[str, Any]:
+        """Calculate normalized overdue duration against reference time or current clock."""
+        return calculate_overdue_duration(self.due_date, reference_time or utc_now())
 
     @computed_field
     def health(self) -> CommitmentHealth:

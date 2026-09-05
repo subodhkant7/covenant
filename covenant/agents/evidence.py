@@ -4,7 +4,13 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from covenant.agents.base import AgentContext, AgentResult, BaseAgent
 from covenant.domain.enums import CommitmentStatus, EvidenceSourceType, RiskLevel
-from covenant.domain.models import EvidenceReference, utc_now
+from covenant.domain.models import (
+    EvidenceReference,
+    _clock_override,
+    calculate_overdue_duration,
+    ensure_utc,
+    utc_now,
+)
 from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
 
@@ -75,32 +81,38 @@ class EvidenceAgent(BaseAgent):
             if ev.source_id not in existing_source_ids:
                 commitment.evidence_references.append(ev)
 
-        # Dynamic Risk & Drift Assessment
+        # Dynamic Risk & Drift Assessment using canonical time evaluation
         all_evidence = commitment.evidence_references
         is_blocking = any("BLOCKED" in (e.snippet or "").upper() for e in all_evidence)
 
-        # Determine effective reference timestamp
+        # Determine effective reference timestamp:
+        # 1. Parameter in AgentContext if explicitly provided
+        # 2. Clock override (via time_freeze / set_clock_override) if active
+        # 3. Canonical workspace simulation reference time (2026-09-06T12:00:00Z) if wall clock is before synthetic due_date, else utc_now()
         effective_now = None
         if context and context.parameters:
             effective_now = context.parameters.get("effective_time") or context.parameters.get("reference_time")
 
-        if not effective_now:
+        if effective_now is not None:
+            ref_dt = ensure_utc(effective_now)
+        elif _clock_override.get() is not None:
+            ref_dt = utc_now()
+        else:
             simulated_ref = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
-            effective_now = max(utc_now(), simulated_ref)
-        elif isinstance(effective_now, str):
-            effective_now = datetime.fromisoformat(effective_now).replace(tzinfo=timezone.utc)
+            ref_dt = max(utc_now(), simulated_ref)
 
-        is_overdue = commitment.is_overdue
-        days_overdue = 0.0
-        if commitment.due_date:
-            due = commitment.due_date if commitment.due_date.tzinfo else commitment.due_date.replace(tzinfo=timezone.utc)
-            delta = (effective_now - due).total_seconds() / 86400.0
-            if delta > 0:
-                is_overdue = True
-                days_overdue = round(delta, 1)
-        elif any("overdue" in (e.snippet or "").lower() for e in all_evidence) or commitment.status == CommitmentStatus.OVERDUE:
+        dur = calculate_overdue_duration(commitment.due_date, ref_dt)
+        is_overdue = dur["is_overdue"]
+        elapsed_seconds = dur["elapsed_seconds"]
+        hours_overdue = dur["hours_overdue"]
+        days_overdue = dur["days_overdue"]
+
+        # Text snippet or existing status fallback if no due_date was provided
+        if not is_overdue and (any("overdue" in (e.snippet or "").lower() for e in all_evidence) or commitment.status == CommitmentStatus.OVERDUE):
             is_overdue = True
             days_overdue = 1.0
+            hours_overdue = 24.0
+            elapsed_seconds = 86400.0
 
         risk_rationale = ""
         calc_risk_tool = self.tools.get("calculate_risk") if self.tools else None
@@ -110,6 +122,8 @@ class EvidenceAgent(BaseAgent):
                 days_overdue=days_overdue,
                 is_blocking_downstream=is_blocking,
                 financial_impact=float(commitment.metadata.get("financial_impact", 0.0)),
+                elapsed_seconds=elapsed_seconds,
+                hours_overdue=hours_overdue,
             )
             if risk_res.success:
                 commitment.risk = RiskLevel(risk_res.data["risk"])
@@ -121,7 +135,7 @@ class EvidenceAgent(BaseAgent):
                 commitment=commitment,
                 target_state=CommitmentStatus.OVERDUE,
                 agent_name=self.name,
-                reason=f"Evidence corroboration verified overdue by {days_overdue} days (downstream blocked: {is_blocking}).",
+                reason=f"Evidence corroboration verified overdue by {hours_overdue:.1f} hours ({days_overdue:.2f} days). Downstream blocked: {is_blocking}.",
             )
 
         await self.commitment_repo.save(commitment)
@@ -135,9 +149,12 @@ class EvidenceAgent(BaseAgent):
             rationale=f"Cross-referenced emails, contract terms, and project milestones to determine factual state. {risk_rationale}".strip(),
             metadata={
                 "is_overdue": is_overdue,
+                "elapsed_seconds": elapsed_seconds,
+                "hours_overdue": hours_overdue,
                 "days_overdue": days_overdue,
                 "is_blocking_downstream": is_blocking,
                 "risk_level": commitment.risk.value,
+                "evaluated_at": ref_dt.isoformat(),
             },
         )
         events.append(evt)
@@ -150,7 +167,10 @@ class EvidenceAgent(BaseAgent):
                 "evidence_count": len(commitment.evidence_references),
                 "risk": commitment.risk.value,
                 "is_overdue": is_overdue,
+                "elapsed_seconds": elapsed_seconds,
+                "hours_overdue": hours_overdue,
                 "days_overdue": days_overdue,
+                "evaluated_at": ref_dt.isoformat(),
             },
             events=events,
         )
