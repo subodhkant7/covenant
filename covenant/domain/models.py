@@ -129,6 +129,35 @@ class EvidenceReference(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class EvidenceClaim(BaseModel):
+    """Structured factual or inferential claim extracted from workspace evidence."""
+    source_id: str = Field(..., description="ID of source evidence, e.g. PRJ-ATLAS, EML-102")
+    claim: str = Field(..., description="Specific factual claim or finding")
+    is_fact: bool = Field(default=True, description="True if grounded in documentary record, False if inferred")
+    relevance: str = Field(default="HIGH", description="Relevance to commitment fulfillment: HIGH, MEDIUM, LOW")
+    confidence: float = Field(default=0.95, ge=0.0, le=1.0)
+
+
+class EvidenceConflict(BaseModel):
+    """Represents a contradiction or tension detected between multiple evidence sources."""
+    source_a: str = Field(..., description="Primary evidence source ID")
+    source_b: str = Field(..., description="Conflicting evidence source ID")
+    description: str = Field(..., description="Concise explanation of the contradiction")
+    conflict_type: str = Field(default="TIMELINE_MISMATCH", description="STATUS_CONTRADICTION, TIMELINE_MISMATCH, or MISSING_PREREQUISITE")
+    severity: RiskLevel = Field(default=RiskLevel.MEDIUM)
+
+
+class EvidenceAssessment(BaseModel):
+    """Structured reasoning output from EvidenceAgent synthesis across workspace records."""
+    finding: str = Field(..., description="Core factual conclusion synthesized across evidence")
+    factual_claims: List[EvidenceClaim] = Field(default_factory=list)
+    conflicts: List[EvidenceConflict] = Field(default_factory=list)
+    confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    is_blocking_downstream: bool = Field(default=False)
+    recommended_risk: RiskLevel = Field(default=RiskLevel.LOW)
+    rationale: str = Field(default="", description="Concise reasoning rationale without private chain-of-thought")
+
+
 class CommitmentExtractionResult(BaseModel):
     """Structured reasoning output from CommitmentAgent."""
     is_commitment: bool = Field(..., description="Whether statement constitutes a binding obligation")
@@ -295,6 +324,7 @@ class Commitment(BaseModel):
     status: CommitmentStatus = Field(default=CommitmentStatus.DISCOVERED)
     risk: RiskLevel = Field(default=RiskLevel.LOW)
     confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    evidence_assessment: Optional[EvidenceAssessment] = None
     
     # Causality & Action Plan
     dependencies: List[str] = Field(default_factory=list, description="IDs of other commitments blocking this one")

@@ -116,6 +116,50 @@ class DeterministicFallbackProvider(AbstractModelProvider):
                 "promised_deliverable": "Formal deliverable or agreed obligation" if is_com else "",
                 "rationale": rationale,
             })
+        elif "synthesize evidence" in lower_msg or "evidence assessment" in lower_msg:
+            is_blocking = "blocked" in lower_msg or "prj-atlas" in lower_msg or "atlas" in lower_msg
+            claims = [
+                {
+                    "source_id": "PRJ-ATLAS" if "atlas" in lower_msg else "DOC-001",
+                    "claim": "Deliverables submitted and awaiting formal sign-off; downstream work blocked." if is_blocking else "Deliverable records logged in project system.",
+                    "is_fact": True,
+                    "relevance": "HIGH",
+                    "confidence": 0.98,
+                },
+                {
+                    "source_id": "INBOX_SCAN",
+                    "claim": "No counterparty confirmation received past the expected deadline.",
+                    "is_fact": True,
+                    "relevance": "HIGH",
+                    "confidence": 0.95,
+                },
+                {
+                    "source_id": "DERIVED_ANALYSIS",
+                    "claim": "Counterparty response time has exceeded contractual turnaround expectations.",
+                    "is_fact": False,
+                    "relevance": "MEDIUM",
+                    "confidence": 0.85,
+                },
+            ]
+            conflicts = [
+                {
+                    "source_a": "PRJ-ATLAS" if "atlas" in lower_msg else "DOC-001",
+                    "source_b": "INBOX_SCAN",
+                    "description": "Milestone submitted awaiting client approval, but deadline passed without formal sign-off.",
+                    "conflict_type": "STATUS_CONTRADICTION",
+                    "severity": "HIGH",
+                }
+            ] if is_blocking else []
+
+            content = json.dumps({
+                "finding": "Counterparty formal sign-off is overdue; downstream development is blocked." if is_blocking else "Evidence gathered across workspace records.",
+                "factual_claims": claims,
+                "conflicts": conflicts,
+                "confidence": 0.96 if is_blocking else 0.88,
+                "is_blocking_downstream": is_blocking,
+                "recommended_risk": "MEDIUM" if is_blocking else "LOW",
+                "rationale": "Cross-source corroboration confirmed submission is waiting while deadline has elapsed without response.",
+            })
         elif "verify" in lower_msg:
             content = json.dumps({
                 "is_verified": True,

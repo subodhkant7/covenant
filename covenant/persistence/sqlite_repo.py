@@ -74,6 +74,10 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
 
     def _serialize_commitment(self, c: Commitment) -> Dict[str, Any]:
         """Convert Commitment Pydantic model to database record parameters."""
+        meta = dict(c.metadata)
+        if c.evidence_assessment:
+            meta["evidence_assessment"] = c.evidence_assessment.model_dump(mode="json")
+
         return {
             "id": c.id,
             "title": c.title,
@@ -97,13 +101,15 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
             "verification_requirements_json": json.dumps([v.model_dump(mode="json") for v in c.verification_requirements]),
             "verification_result_json": c.verification_result.model_dump_json() if c.verification_result else None,
             "tags_json": json.dumps(c.tags),
-            "metadata_json": json.dumps(c.metadata),
+            "metadata_json": json.dumps(meta),
             "obligation_direction": c.obligation_direction.value,
             "updated_at": utc_now().isoformat(),
         }
 
     def _deserialize_commitment(self, row: sqlite3.Row) -> Commitment:
         """Construct Commitment Pydantic model from SQLite row."""
+        meta = json.loads(row["metadata_json"])
+        evidence_assessment = meta.get("evidence_assessment")
         data = {
             "id": row["id"],
             "title": row["title"],
@@ -120,6 +126,7 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
             "status": row["status"],
             "risk": row["risk"],
             "confidence": float(row["confidence"]),
+            "evidence_assessment": evidence_assessment,
             "dependencies": json.loads(row["dependencies_json"]),
             "next_action": json.loads(row["next_action_json"]) if row["next_action_json"] else None,
             "required_human_approval": bool(row["required_human_approval"]),
@@ -127,7 +134,7 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
             "verification_requirements": json.loads(row["verification_requirements_json"]),
             "verification_result": json.loads(row["verification_result_json"]) if row["verification_result_json"] else None,
             "tags": json.loads(row["tags_json"]),
-            "metadata": json.loads(row["metadata_json"]),
+            "metadata": meta,
         }
         return Commitment.model_validate(data)
 
