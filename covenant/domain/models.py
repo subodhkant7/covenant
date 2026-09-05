@@ -17,6 +17,7 @@ from covenant.domain.enums import (
     PolicyCategory,
     PolicyDecisionType,
     RiskLevel,
+    StatementType,
 )
 
 _clock_override: contextvars.ContextVar[Optional[datetime]] = contextvars.ContextVar("_clock_override", default=None)
@@ -126,6 +127,21 @@ class EvidenceReference(BaseModel):
     url_or_path: Optional[str] = Field(None, description="Reference link or filepath")
     confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CommitmentExtractionResult(BaseModel):
+    """Structured reasoning output from CommitmentAgent."""
+    is_commitment: bool = Field(..., description="Whether statement constitutes a binding obligation")
+    statement_type: StatementType = Field(..., description="Classification of the statement")
+    confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+    promisor: Optional[Party] = None
+    promisee: Optional[Party] = None
+    obligation_direction: ObligationDirection = ObligationDirection.THEY_OWE_US
+    promised_deliverable: str = Field(default="", description="What was explicitly promised or agreed")
+    due_date: Optional[datetime] = None
+    category: CommitmentCategory = CommitmentCategory.OTHER
+    rationale: str = Field(default="", description="Reasoning explaining why this is or is not a commitment")
+    source_evidence_ids: List[str] = Field(default_factory=list)
 
 
 class ActionHistoryItem(BaseModel):

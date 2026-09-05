@@ -113,3 +113,12 @@ class ObligationDirection(str, Enum):
     THEY_OWE_US = "THEY_OWE_US"
     WE_OWE_THEM = "WE_OWE_THEM"
     THIRD_PARTY = "THIRD_PARTY"
+
+
+class StatementType(str, Enum):
+    """Categorization of communicative statements for commitment extraction."""
+    COMMITMENT = "COMMITMENT"
+    SUGGESTION = "SUGGESTION"
+    QUESTION = "QUESTION"
+    COMPLETED_ACTION = "COMPLETED_ACTION"
+    NON_BINDING_STATEMENT = "NON_BINDING_STATEMENT"

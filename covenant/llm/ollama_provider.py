@@ -86,12 +86,37 @@ class DeterministicFallbackProvider(AbstractModelProvider):
         
         # Default structured JSON if json_mode requested
         content = "{}"
-        if "extract commitments" in last_msg.lower():
+        lower_msg = last_msg.lower()
+        if "extract commitment" in lower_msg or "classify statement" in lower_msg or "extract commitments" in lower_msg:
+            if any(w in lower_msg for w in ["?", "could we", "can you", "would you", "is there", "please review and send"]):
+                stmt_type = "QUESTION"
+                is_com = False
+                rationale = "Statement is an inquiry, review request, or question rather than a binding promise."
+            elif any(w in lower_msg for w in ["maybe", "perhaps", "could consider", "might want to", "suggest"]):
+                stmt_type = "SUGGESTION"
+                is_com = False
+                rationale = "Statement expresses a non-binding suggestion or exploratory idea."
+            elif any(w in lower_msg for w in ["already finished", "delivered yesterday", "finalized all", "have finalized"]):
+                stmt_type = "COMPLETED_ACTION"
+                is_com = False
+                rationale = "Statement describes a completed past action or submission without future obligation."
+            elif any(w in lower_msg for w in ["promise", "guarantee", "will provide", "will deliver", "sign-off by"]):
+                stmt_type = "COMMITMENT"
+                is_com = True
+                rationale = "Statement contains an explicit binding commitment with deliverable and timeline."
+            else:
+                stmt_type = "NON_BINDING_STATEMENT"
+                is_com = False
+                rationale = "Statement expresses non-binding opinion or general communication."
+
             content = json.dumps({
-                "commitments_found": 1,
-                "summary": "Extracted commitment from workspace evidence",
+                "is_commitment": is_com,
+                "statement_type": stmt_type,
+                "confidence": 0.96 if is_com else 0.90,
+                "promised_deliverable": "Formal deliverable or agreed obligation" if is_com else "",
+                "rationale": rationale,
             })
-        elif "verify" in last_msg.lower():
+        elif "verify" in lower_msg:
             content = json.dumps({
                 "is_verified": True,
                 "rationale": "Evidence successfully corroborates requirement completion.",
