@@ -55,7 +55,7 @@ class SupervisorAgent(BaseAgent):
             sub_ctx = AgentContext(session_id=context.session_id, target_commitment_id=com.id)
 
             # If overdue or investigating, run evidence and resolution pipeline
-            if com.status in [CommitmentStatus.OVERDUE, CommitmentStatus.INVESTIGATING, CommitmentStatus.DUE]:
+            if com.status in [CommitmentStatus.OVERDUE, CommitmentStatus.INVESTIGATING, CommitmentStatus.DUE] or com.is_overdue:
                 # Evidence corroboration
                 ev_res = await self.evidence_agent.run(sub_ctx)
                 events.extend(ev_res.events)

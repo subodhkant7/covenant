@@ -34,6 +34,7 @@ class DraftFollowupTool(BaseTool):
             "promise_summary": {"type": "string"},
             "original_due_date": {"type": "string"},
             "evidence_notes": {"type": "string"},
+            "risk": {"type": "string"},
         },
         "required": ["commitment_id", "recipient_name", "subject", "promise_summary"],
     }
@@ -47,6 +48,7 @@ class DraftFollowupTool(BaseTool):
         recipient_email: Optional[str] = None,
         original_due_date: Optional[str] = None,
         evidence_notes: Optional[str] = None,
+        risk: Optional[str] = None,
         **kwargs: Any,
     ) -> ToolResult:
         body = (
@@ -71,7 +73,7 @@ class DraftFollowupTool(BaseTool):
             status=ActionStatus.PROPOSED,
             requires_human_approval=True,  # Policy requires human approval for external messages
             approval_reason="RULE-EXT-COMM: External communication to client/partner requires authorization.",
-            risk=RiskLevel.LOW,
+            risk=RiskLevel(risk) if risk and risk in RiskLevel.__members__ else RiskLevel.LOW,
             confidence=0.96,
         )
         return ToolResult(success=True, data=action.model_dump(mode="json"))

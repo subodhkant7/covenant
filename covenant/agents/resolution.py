@@ -34,10 +34,12 @@ class ResolutionAgent(BaseAgent):
                 promise_summary="Phase 2 High-Fidelity UI System Formal Sign-Off",
                 original_due_date=due_str,
                 evidence_notes="Phase 2 deliverables submitted Sep 3. Phase 3 frontend implementation is on hold pending sign-off per MSA Section 4.2.",
+                risk=commitment.risk.value,
             )
 
             if draft_res.success:
                 proposed_action = ProposedAction.model_validate(draft_res.data)
+                proposed_action.risk = commitment.risk
                 commitment.next_action = proposed_action
                 commitment.required_human_approval = proposed_action.requires_human_approval
 
@@ -59,6 +61,7 @@ class ResolutionAgent(BaseAgent):
                     tool_name="draft_followup",
                     new_state=commitment.status,
                     rationale="Overdue deliverable approval blocking downstream development. Action prepared for policy evaluation.",
+                    metadata={"risk": proposed_action.risk.value},
                 )
                 events.append(evt)
 

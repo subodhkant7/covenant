@@ -1,9 +1,11 @@
 """Evidence Agent: Cross-corroborates evidence across sources to establish state."""
 
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Optional
 from covenant.agents.base import AgentContext, AgentResult, BaseAgent
-from covenant.domain.enums import CommitmentStatus, EvidenceSourceType
-from covenant.domain.models import EvidenceReference
+from covenant.domain.enums import CommitmentStatus, EvidenceSourceType, RiskLevel
+from covenant.domain.models import EvidenceReference, utc_now
+from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
 
 
@@ -73,21 +75,82 @@ class EvidenceAgent(BaseAgent):
             if ev.source_id not in existing_source_ids:
                 commitment.evidence_references.append(ev)
 
+        # Dynamic Risk & Drift Assessment
+        all_evidence = commitment.evidence_references
+        is_blocking = any("BLOCKED" in (e.snippet or "").upper() for e in all_evidence)
+
+        # Determine effective reference timestamp
+        effective_now = None
+        if context and context.parameters:
+            effective_now = context.parameters.get("effective_time") or context.parameters.get("reference_time")
+
+        if not effective_now:
+            simulated_ref = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+            effective_now = max(utc_now(), simulated_ref)
+        elif isinstance(effective_now, str):
+            effective_now = datetime.fromisoformat(effective_now).replace(tzinfo=timezone.utc)
+
+        is_overdue = commitment.is_overdue
+        days_overdue = 0.0
+        if commitment.due_date:
+            due = commitment.due_date if commitment.due_date.tzinfo else commitment.due_date.replace(tzinfo=timezone.utc)
+            delta = (effective_now - due).total_seconds() / 86400.0
+            if delta > 0:
+                is_overdue = True
+                days_overdue = round(delta, 1)
+        elif any("overdue" in (e.snippet or "").lower() for e in all_evidence) or commitment.status == CommitmentStatus.OVERDUE:
+            is_overdue = True
+            days_overdue = 1.0
+
+        risk_rationale = ""
+        calc_risk_tool = self.tools.get("calculate_risk") if self.tools else None
+        if calc_risk_tool:
+            risk_res = await calc_risk_tool.execute(
+                is_overdue=is_overdue,
+                days_overdue=days_overdue,
+                is_blocking_downstream=is_blocking,
+                financial_impact=float(commitment.metadata.get("financial_impact", 0.0)),
+            )
+            if risk_res.success:
+                commitment.risk = RiskLevel(risk_res.data["risk"])
+                risk_rationale = risk_res.data.get("rationale", "")
+
+        # State transition: if active/discovered and overdue, transition to OVERDUE
+        if is_overdue and CommitmentStateMachine.can_transition(commitment.status, CommitmentStatus.OVERDUE):
+            CommitmentStateMachine.transition(
+                commitment=commitment,
+                target_state=CommitmentStatus.OVERDUE,
+                agent_name=self.name,
+                reason=f"Evidence corroboration verified overdue by {days_overdue} days (downstream blocked: {is_blocking}).",
+            )
+
         await self.commitment_repo.save(commitment)
 
         evt = await self.emit_event(
             action_name="CORROBORATE_EVIDENCE",
-            summary=f"Gathered {len(new_evidence)} new evidence references for '{commitment.title}'.",
+            summary=f"Gathered {len(new_evidence)} new evidence references for '{commitment.title}' (Risk: {commitment.risk.value}).",
             commitment_id=commitment.id,
             tool_name="workspace_tools",
-            rationale="Cross-referenced emails, contract terms, and project milestones to determine factual state.",
+            new_state=commitment.status,
+            rationale=f"Cross-referenced emails, contract terms, and project milestones to determine factual state. {risk_rationale}".strip(),
+            metadata={
+                "is_overdue": is_overdue,
+                "days_overdue": days_overdue,
+                "is_blocking_downstream": is_blocking,
+                "risk_level": commitment.risk.value,
+            },
         )
         events.append(evt)
 
         return AgentResult(
             agent_name=self.name,
             success=True,
-            summary=f"Corroborated {len(new_evidence)} evidence sources.",
-            data={"evidence_count": len(commitment.evidence_references)},
+            summary=f"Corroborated {len(new_evidence)} evidence sources (Calculated Risk: {commitment.risk.value}).",
+            data={
+                "evidence_count": len(commitment.evidence_references),
+                "risk": commitment.risk.value,
+                "is_overdue": is_overdue,
+                "days_overdue": days_overdue,
+            },
             events=events,
         )
