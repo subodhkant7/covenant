@@ -1020,6 +1020,92 @@ async def get_events(limit: int = 50, commitment_id: Optional[str] = None):
     return await repo.list_events(commitment_id=commitment_id, limit=limit)
 
 
+@router.post("/monitoring/cycles")
+async def trigger_monitoring_cycle():
+    """
+    Trigger a bounded autonomous monitoring cycle via the canonical SupervisorAgent.
+    Enforces atomic cycle reservation (rejecting concurrent runs with 409 Conflict),
+    persists cycle outcomes and operational counters, and records audit telemetry.
+    """
+    cycle_id = f"cycle_{uuid4().hex[:8]}"
+    reserved, active_id = await repo.reserve_or_start_cycle(cycle_id)
+    if not reserved:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A monitoring cycle is currently active: {active_id}",
+        )
+
+    ctx = AgentContext(session_id=f"monitor_{cycle_id}")
+    try:
+        result = await supervisor.run_monitoring_cycle(ctx, cycle_id=cycle_id)
+        if not result.success or (result.data and result.data.get("status") == "FAILED"):
+            errors = result.data.get("errors", [result.summary]) if result.data else [result.summary]
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "cycle_id": cycle_id,
+                    "status": "FAILED",
+                    "errors": errors,
+                    "summary": result.summary,
+                },
+            )
+        record = await repo.get_cycle_record(cycle_id)
+        if record:
+            return record
+        return result.data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        failed_record = {
+            "cycle_id": cycle_id,
+            "status": "FAILED",
+            "started_at": utc_now().isoformat(),
+            "completed_at": utc_now().isoformat(),
+            "errors": [str(exc)],
+            "summary": f"Monitoring cycle failed: {str(exc)}",
+        }
+        await repo.save_cycle_record(failed_record)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "cycle_id": cycle_id,
+                "status": "FAILED",
+                "errors": [str(exc)],
+                "summary": str(exc),
+            },
+        )
+
+
+@router.get("/monitoring/cycles/{cycle_id}")
+async def get_monitoring_cycle(cycle_id: str):
+    """Retrieve operational details and metrics for a specific monitoring cycle."""
+    record = await repo.get_cycle_record(cycle_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Monitoring cycle '{cycle_id}' not found.")
+    return {
+        "cycle_id": record["cycle_id"],
+        "status": record["status"],
+        "started_at": record["started_at"],
+        "completed_at": record["completed_at"],
+        "commitments_scanned": record["commitments_scanned"],
+        "commitments_changed": record["commitments_changed"],
+        "actions_proposed": record["actions_proposed"],
+        "approval_requests": record["approval_requests"],
+        "executions": record["executions"],
+        "verifications": record["verifications"],
+        "resolved": record["resolved"],
+        "failed": record["failed"],
+        "errors": record.get("errors", []),
+        "summary": record.get("summary", ""),
+    }
+
+
+@router.get("/monitoring/cycles")
+async def list_monitoring_cycles(limit: int = 50):
+    """List recent monitoring cycle records ordered by start time."""
+    return await repo.list_cycle_records(limit=limit)
+
+
 @router.post("/scan")
 async def run_scan_cycle():
     """Trigger the full autonomous Supervisor scan cycle."""

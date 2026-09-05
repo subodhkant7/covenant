@@ -5,7 +5,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from covenant.config import DEFAULT_DB_PATH
 from covenant.domain.enums import CommitmentStatus, ObligationDirection, RiskLevel
@@ -375,3 +375,153 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
                 return events
 
         return await asyncio.to_thread(_list_events)
+
+    async def reserve_or_start_cycle(
+        self, cycle_id: str, started_at: Optional[datetime] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Atomically reserve a new monitoring cycle or detect an active running cycle.
+        Provides robust transactional concurrency control across processes and tasks.
+        """
+        now = started_at or utc_now()
+
+        def _reserve():
+            with self._get_connection() as conn:
+                cursor = conn.execute("SELECT cycle_id, started_at FROM monitoring_cycles WHERE status = 'RUNNING'")
+                row = cursor.fetchone()
+                if row:
+                    # Active cycle found. Check if it has exceeded stale timeout (300 seconds)
+                    try:
+                        active_start = datetime.fromisoformat(row["started_at"])
+                        if (now - active_start).total_seconds() < 300:
+                            return False, row["cycle_id"]
+                        # Stale timed-out cycle: mark failed
+                        conn.execute(
+                            "UPDATE monitoring_cycles SET status = 'FAILED', errors_json = ? WHERE cycle_id = ?",
+                            (json.dumps(["Cycle execution timed out after 300s"]), row["cycle_id"])
+                        )
+                    except Exception:
+                        return False, row["cycle_id"]
+
+                conn.execute(
+                    """
+                    INSERT INTO monitoring_cycles (cycle_id, status, started_at, summary)
+                    VALUES (?, 'RUNNING', ?, 'Autonomous monitoring cycle in progress')
+                    """,
+                    (cycle_id, now.isoformat()),
+                )
+                conn.commit()
+                return True, cycle_id
+
+        return await asyncio.to_thread(_reserve)
+
+    async def save_cycle_record(self, cycle_data: Dict[str, Any]) -> None:
+        """Persist or update monitoring cycle metadata and counters."""
+        query = """
+        INSERT INTO monitoring_cycles (
+            cycle_id, status, started_at, completed_at,
+            commitments_scanned, commitments_changed, actions_proposed, approval_requests,
+            executions, verifications, resolved, failed,
+            errors_json, summary, metadata_json
+        ) VALUES (
+            :cycle_id, :status, :started_at, :completed_at,
+            :commitments_scanned, :commitments_changed, :actions_proposed, :approval_requests,
+            :executions, :verifications, :resolved, :failed,
+            :errors_json, :summary, :metadata_json
+        )
+        ON CONFLICT(cycle_id) DO UPDATE SET
+            status = excluded.status,
+            completed_at = excluded.completed_at,
+            commitments_scanned = excluded.commitments_scanned,
+            commitments_changed = excluded.commitments_changed,
+            actions_proposed = excluded.actions_proposed,
+            approval_requests = excluded.approval_requests,
+            executions = excluded.executions,
+            verifications = excluded.verifications,
+            resolved = excluded.resolved,
+            failed = excluded.failed,
+            errors_json = excluded.errors_json,
+            summary = excluded.summary,
+            metadata_json = excluded.metadata_json
+        """
+        params = {
+            "cycle_id": cycle_data["cycle_id"],
+            "status": cycle_data.get("status", "COMPLETED"),
+            "started_at": cycle_data["started_at"],
+            "completed_at": cycle_data.get("completed_at"),
+            "commitments_scanned": cycle_data.get("commitments_scanned", 0),
+            "commitments_changed": cycle_data.get("commitments_changed", 0),
+            "actions_proposed": cycle_data.get("actions_proposed", 0),
+            "approval_requests": cycle_data.get("approval_requests", 0),
+            "executions": cycle_data.get("executions", 0),
+            "verifications": cycle_data.get("verifications", 0),
+            "resolved": cycle_data.get("resolved", 0),
+            "failed": cycle_data.get("failed", 0),
+            "errors_json": json.dumps(cycle_data.get("errors", [])),
+            "summary": cycle_data.get("summary"),
+            "metadata_json": json.dumps(cycle_data.get("metadata", {})),
+        }
+
+        def _save():
+            with self._get_connection() as conn:
+                conn.execute(query, params)
+                conn.commit()
+
+        await asyncio.to_thread(_save)
+
+    async def get_cycle_record(self, cycle_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a monitoring cycle run by its cycle ID."""
+        def _get():
+            with self._get_connection() as conn:
+                cursor = conn.execute("SELECT * FROM monitoring_cycles WHERE cycle_id = ?", (cycle_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                return {
+                    "cycle_id": row["cycle_id"],
+                    "status": row["status"],
+                    "started_at": row["started_at"],
+                    "completed_at": row["completed_at"],
+                    "commitments_scanned": row["commitments_scanned"],
+                    "commitments_changed": row["commitments_changed"],
+                    "actions_proposed": row["actions_proposed"],
+                    "approval_requests": row["approval_requests"],
+                    "executions": row["executions"],
+                    "verifications": row["verifications"],
+                    "resolved": row["resolved"],
+                    "failed": row["failed"],
+                    "errors": json.loads(row["errors_json"]) if row["errors_json"] else [],
+                    "summary": row["summary"],
+                    "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+                }
+
+        return await asyncio.to_thread(_get)
+
+    async def list_cycle_records(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve recent monitoring cycle records ordered by start time."""
+        def _list():
+            with self._get_connection() as conn:
+                cursor = conn.execute("SELECT * FROM monitoring_cycles ORDER BY started_at DESC LIMIT ?", (limit,))
+                rows = cursor.fetchall()
+                results = []
+                for row in rows:
+                    results.append({
+                        "cycle_id": row["cycle_id"],
+                        "status": row["status"],
+                        "started_at": row["started_at"],
+                        "completed_at": row["completed_at"],
+                        "commitments_scanned": row["commitments_scanned"],
+                        "commitments_changed": row["commitments_changed"],
+                        "actions_proposed": row["actions_proposed"],
+                        "approval_requests": row["approval_requests"],
+                        "executions": row["executions"],
+                        "verifications": row["verifications"],
+                        "resolved": row["resolved"],
+                        "failed": row["failed"],
+                        "errors": json.loads(row["errors_json"]) if row["errors_json"] else [],
+                        "summary": row["summary"],
+                        "metadata": json.loads(row["metadata_json"]) if row["metadata_json"] else {},
+                    })
+                return results
+
+        return await asyncio.to_thread(_list)

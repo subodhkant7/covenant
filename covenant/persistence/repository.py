@@ -52,6 +52,22 @@ class AbstractCommitmentRepository(ABC):
         """Count commitments matching criteria."""
         pass
 
+    async def reserve_or_start_cycle(self, cycle_id: str, timeout_seconds: int = 300) -> tuple:
+        """Reserve or verify that a cycle can run."""
+        return (True, cycle_id)
+
+    async def save_cycle_record(self, cycle_data: dict) -> None:
+        """Persist cycle metadata and counters."""
+        pass
+
+    async def get_cycle_record(self, cycle_id: str) -> Optional[dict]:
+        """Fetch a cycle record by ID."""
+        return None
+
+    async def list_cycle_records(self, limit: int = 50) -> List[dict]:
+        """List recent cycle records."""
+        return []
+
 
 class AbstractEventRepository(ABC):
     """Abstract interface for observability and audit trail persistence."""

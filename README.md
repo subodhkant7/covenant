@@ -37,6 +37,18 @@ covenant/
 
 ---
 
+## Monitoring Control Plane
+
+Covenant exposes its bounded autonomous monitoring cycle through an explicit operational control plane:
+
+- **`POST /api/monitoring/cycles`**: Triggers a canonical bounded monitoring cycle via `SupervisorAgent.run_monitoring_cycle()`. Enforces atomic persistent cycle reservation (rejecting concurrent runs with `409 Conflict`), records telemetry (`SUPERVISOR_CYCLE_START`, `SUPERVISOR_CYCLE_COMPLETE`), updates commitment drift, proposes remedial actions under policy governance, and independently verifies post-dispatch outcomes.
+- **`GET /api/monitoring/cycles/{cycle_id}`**: Retrieves operational metadata and summary metrics for a specific cycle run (`cycle_id`, `status`, `started_at`, `completed_at`, `commitments_scanned`, `commitments_changed`, `actions_proposed`, `approval_requests`, `executions`, `verifications`, `resolved`, `failed`, `errors`).
+- **`GET /api/monitoring/cycles`**: Lists recent monitoring cycles.
+
+> **Note**: This control plane provides an explicit, bounded monitoring trigger and operational audit surface. It is deliberately distinct from a continuous background daemon or production scheduler.
+
+---
+
 ## Quickstart & Local Setup
 
 ### 1. Requirements

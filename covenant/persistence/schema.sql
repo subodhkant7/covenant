@@ -61,3 +61,24 @@ CREATE INDEX IF NOT EXISTS idx_events_timestamp ON agent_events(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_events_commitment ON agent_events(commitment_id);
 CREATE INDEX IF NOT EXISTS idx_events_agent ON agent_events(agent_name);
 CREATE INDEX IF NOT EXISTS idx_events_workflow ON agent_events(workflow_id);
+
+CREATE TABLE IF NOT EXISTS monitoring_cycles (
+    cycle_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    commitments_scanned INTEGER NOT NULL DEFAULT 0,
+    commitments_changed INTEGER NOT NULL DEFAULT 0,
+    actions_proposed INTEGER NOT NULL DEFAULT 0,
+    approval_requests INTEGER NOT NULL DEFAULT 0,
+    executions INTEGER NOT NULL DEFAULT 0,
+    verifications INTEGER NOT NULL DEFAULT 0,
+    resolved INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    errors_json TEXT NOT NULL DEFAULT '[]',
+    summary TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitoring_cycles_status ON monitoring_cycles(status);
+CREATE INDEX IF NOT EXISTS idx_monitoring_cycles_started ON monitoring_cycles(started_at DESC);

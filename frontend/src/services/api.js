@@ -92,6 +92,27 @@ export async function triggerScan() {
   return res.json();
 }
 
+export async function triggerMonitoringCycle() {
+  const res = await fetch(`${API_BASE}/monitoring/cycles`, { method: 'POST' });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to trigger monitoring cycle');
+  }
+  return res.json();
+}
+
+export async function fetchMonitoringCycle(cycleId) {
+  const res = await fetch(`${API_BASE}/monitoring/cycles/${cycleId}`);
+  if (!res.ok) throw new Error('Failed to fetch monitoring cycle');
+  return res.json();
+}
+
+export async function fetchMonitoringCycles(limit = 20) {
+  const res = await fetch(`${API_BASE}/monitoring/cycles?limit=${limit}`);
+  if (!res.ok) throw new Error('Failed to fetch monitoring cycles');
+  return res.json();
+}
+
 export async function triggerSeed() {
   const res = await fetch(`${API_BASE}/seed`, { method: 'POST' });
   if (!res.ok) throw new Error('Failed to trigger seed');
