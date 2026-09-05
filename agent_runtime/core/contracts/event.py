@@ -1,0 +1,60 @@
+"""Immutable event telemetry for audit and causal observability."""
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import uuid4
+from pydantic import BaseModel, Field
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class EventType(str, Enum):
+    TASK_CREATED = "TASK_CREATED"
+    TASK_ROUTED = "TASK_ROUTED"
+    AGENT_RUN_STARTED = "AGENT_RUN_STARTED"
+    TOOL_REQUESTED = "TOOL_REQUESTED"
+    POLICY_EVALUATED = "POLICY_EVALUATED"
+    APPROVAL_REQUESTED = "APPROVAL_REQUESTED"
+    APPROVAL_DECIDED = "APPROVAL_DECIDED"
+    TOOL_EXECUTION_STARTED = "TOOL_EXECUTION_STARTED"
+    TOOL_EXECUTION_COMPLETED = "TOOL_EXECUTION_COMPLETED"
+    OBSERVATION_EMITTED = "OBSERVATION_EMITTED"
+    AGENT_RUN_FINISHED = "AGENT_RUN_FINISHED"
+    VERIFICATION_STARTED = "VERIFICATION_STARTED"
+    VERIFICATION_DONE = "VERIFICATION_DONE"
+    TASK_COMPLETED = "TASK_COMPLETED"
+    TASK_FAILED = "TASK_FAILED"
+    SECURITY_VIOLATION = "SECURITY_VIOLATION"
+    EXTERNAL_AGENT_REQUESTED = "EXTERNAL_AGENT_REQUESTED"
+    EXTERNAL_AGENT_RESPONDED = "EXTERNAL_AGENT_RESPONDED"
+    EXTERNAL_AGENT_TIMEOUT = "EXTERNAL_AGENT_TIMEOUT"
+    EXTERNAL_AGENT_REJECTED = "EXTERNAL_AGENT_REJECTED"
+    EXTERNAL_AGENT_CONNECTED = "EXTERNAL_AGENT_CONNECTED"
+    EXTERNAL_AGENT_DISCONNECTED = "EXTERNAL_AGENT_DISCONNECTED"
+    EXTERNAL_AGENT_PROCESS_STARTED = "EXTERNAL_AGENT_PROCESS_STARTED"
+    EXTERNAL_AGENT_PROCESS_EXITED = "EXTERNAL_AGENT_PROCESS_EXITED"
+    EXTERNAL_AGENT_PROTOCOL_ERROR = "EXTERNAL_AGENT_PROTOCOL_ERROR"
+    EXTERNAL_AGENT_HOST_STARTED = "EXTERNAL_AGENT_HOST_STARTED"
+    EXTERNAL_AGENT_HOST_REQUESTED = "EXTERNAL_AGENT_HOST_REQUESTED"
+    EXTERNAL_AGENT_HOST_RESPONDED = "EXTERNAL_AGENT_HOST_RESPONDED"
+    EXTERNAL_AGENT_HOST_TIMEOUT = "EXTERNAL_AGENT_HOST_TIMEOUT"
+    EXTERNAL_AGENT_HOST_FAILED = "EXTERNAL_AGENT_HOST_FAILED"
+    EXTERNAL_AGENT_HOST_CLOSED = "EXTERNAL_AGENT_HOST_CLOSED"
+
+
+class Event(BaseModel):
+    """Immutable audit and telemetry event."""
+    event_id: str = Field(default_factory=lambda: f"evt_{uuid4().hex[:12]}")
+    trace_id: str
+    parent_event_id: Optional[str] = None
+    organization_id: str
+    task_id: Optional[str] = None
+    agent_run_id: Optional[str] = None
+    execution_id: Optional[str] = None
+    event_type: EventType
+    summary: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    timestamp: datetime = Field(default_factory=utc_now)

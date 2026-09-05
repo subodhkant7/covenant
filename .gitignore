@@ -1,0 +1,28 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Testing and virtual environments
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Frontend dependencies and build outputs
+node_modules/
+dist/
+build/
+.vite/
+
+# SQLite runtime databases and journals
+*.db
+*.db-shm
+*.db-wal
+
+# Operating System metadata
+.DS_Store
+
+# Local secrets
+.env
+.env.*
