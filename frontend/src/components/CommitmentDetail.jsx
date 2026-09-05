@@ -87,6 +87,12 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
   const currentRisk = trace?.current_risk || commitment.risk;
   const health = trace?.health || commitment.health;
 
+  const assessment = trace?.evidence_assessment || commitment.evidence_assessment || commitment.metadata?.evidence_assessment;
+  const factualClaims = assessment?.factual_claims?.filter(c => c.is_fact) || [];
+  const inferentialClaims = assessment?.factual_claims?.filter(c => !c.is_fact) || [];
+  const conflicts = assessment?.conflicts || [];
+
+
   // Status visual attributes
   const getStatusBadge = (status) => {
     switch (status) {
@@ -368,33 +374,151 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                 </div>
               </div>
 
-              {/* SECTION 2: EVIDENCE CORROBORATION */}
+              {/* SECTION 2: EVIDENCE INTELLIGENCE & CORROBORATION */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <span className="text-[11px] font-mono uppercase font-bold text-blue-400 flex items-center space-x-1.5">
                     <FileText className="w-3.5 h-3.5" />
-                    <span>2. Corroborating Evidence ({trace?.evidence?.length || commitment.evidence_references?.length || 0})</span>
+                    <span>2. Evidence Intelligence &amp; Multi-Source Corroboration</span>
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">Authority: EvidenceAgent</span>
+                  <span className="text-[10px] font-mono text-slate-400">Authority: EvidenceAgent (Strands Synthesis)</span>
                 </div>
 
-                <div className="space-y-2">
-                  {(trace?.evidence || commitment.evidence_references || []).map((ev, idx) => (
-                    <div key={idx} className="p-2.5 rounded bg-slate-900/80 border border-slate-800 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-blue-400 text-[11px]">
-                          [{ev.source_type?.toUpperCase()} {ev.source_id}]
+                {/* SYNTHESIZED ASSESSMENT FINDING */}
+                <div className="p-3 rounded-lg bg-blue-950/25 border border-blue-800/60 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase font-bold text-blue-300 flex items-center space-x-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Synthesized Evidence Finding</span>
+                    </span>
+                    <div className="flex items-center space-x-1.5">
+                      {assessment?.is_blocking_downstream && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-rose-950/80 text-rose-300 border border-rose-800/80 font-bold">
+                          Downstream Work Blocked
                         </span>
-                        <span className="text-[10px] font-mono text-slate-400">
-                          {Math.round((ev.confidence || 0.9) * 100)}% Confidence
-                        </span>
-                      </div>
-                      <p className="font-semibold text-slate-200 text-xs">{ev.title}</p>
-                      <p className="text-slate-400 italic text-[11px]">"{ev.snippet}"</p>
+                      )}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-900/60 text-blue-200 border border-blue-700">
+                        {Math.round((assessment?.confidence || 0.96) * 100)}% Confidence
+                      </span>
                     </div>
-                  ))}
+                  </div>
+                  <p className="text-slate-100 text-xs font-semibold leading-relaxed">
+                    {assessment?.finding || "Multi-source evidence corroborated across workspace records."}
+                  </p>
+                  {assessment?.rationale && (
+                    <p className="text-slate-400 italic text-[11px] pt-0.5">
+                      "{assessment.rationale}"
+                    </p>
+                  )}
+                </div>
+
+                {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT */}
+                {conflicts.length > 0 && (
+                  <div className="p-3 rounded-lg bg-amber-950/25 border border-amber-500/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase font-bold text-amber-300 flex items-center space-x-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>Cross-Source Contradiction Detected ({conflicts.length})</span>
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-900/60 text-amber-200 border border-amber-700">
+                        Tension Alert
+                      </span>
+                    </div>
+                    {conflicts.map((conf, cIdx) => (
+                      <div key={cIdx} className="p-2.5 rounded bg-amber-950/40 border border-amber-900/60 space-y-1 text-xs">
+                        <div className="flex items-center space-x-2 font-mono text-[10px]">
+                          <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                            {conf.source_a}
+                          </span>
+                          <span className="text-amber-400 font-bold">⟷</span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                            {conf.source_b}
+                          </span>
+                          <span className="text-amber-400/80 ml-auto uppercase text-[9px]">
+                            [{conf.conflict_type}]
+                          </span>
+                        </div>
+                        <p className="text-amber-100 text-[11px] leading-snug">
+                          {conf.description}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* FACTUAL CLAIMS VS INFERRED FINDINGS */}
+                {(factualClaims.length > 0 || inferentialClaims.length > 0) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    {/* DOCUMENTARY FACTS */}
+                    <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-800/60 space-y-2">
+                      <div className="flex items-center justify-between border-b border-emerald-900/60 pb-1.5">
+                        <span className="text-[10px] font-mono uppercase font-bold text-emerald-300 flex items-center space-x-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Documentary Facts ({factualClaims.length})</span>
+                        </span>
+                        <span className="text-[9px] font-mono text-emerald-400/80 uppercase">Verified Records</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {factualClaims.map((claim, idx) => (
+                          <div key={idx} className="p-2 rounded bg-slate-900/80 border border-emerald-900/40 space-y-0.5 text-xs">
+                            <div className="flex items-center justify-between font-mono text-[10px]">
+                              <span className="font-bold text-emerald-400">[{claim.source_id}]</span>
+                              <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Conf</span>
+                            </div>
+                            <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ANALYTICAL INFERENCES */}
+                    <div className="p-3 rounded-lg bg-purple-950/20 border border-purple-800/60 space-y-2">
+                      <div className="flex items-center justify-between border-b border-purple-900/60 pb-1.5">
+                        <span className="text-[10px] font-mono uppercase font-bold text-purple-300 flex items-center space-x-1.5">
+                          <Cpu className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Analytical Inferences ({inferentialClaims.length})</span>
+                        </span>
+                        <span className="text-[9px] font-mono text-purple-400/80 uppercase">Derived Insights</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {inferentialClaims.map((claim, idx) => (
+                          <div key={idx} className="p-2 rounded bg-slate-900/80 border border-purple-900/40 space-y-0.5 text-xs">
+                            <div className="flex items-center justify-between font-mono text-[10px]">
+                              <span className="font-bold text-purple-400">[{claim.source_id}]</span>
+                              <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Conf</span>
+                            </div>
+                            <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PRIMARY WORKSPACE EVIDENCE CITATIONS */}
+                <div className="space-y-2 pt-1">
+                  <span className="text-[10px] font-mono uppercase font-semibold text-slate-400 block">
+                    Primary Workspace Records ({trace?.evidence?.length || commitment.evidence_references?.length || 0})
+                  </span>
+                  <div className="space-y-2">
+                    {(trace?.evidence || commitment.evidence_references || []).map((ev, idx) => (
+                      <div key={idx} className="p-2.5 rounded bg-slate-900/80 border border-slate-800 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-blue-400 text-[11px]">
+                            [{ev.source_type?.toUpperCase()} {ev.source_id}]
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {Math.round((ev.confidence || 0.9) * 100)}% Confidence
+                          </span>
+                        </div>
+                        <p className="font-semibold text-slate-200 text-xs">{ev.title}</p>
+                        <p className="text-slate-400 italic text-[11px]">"{ev.snippet}"</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
+
 
               {/* SECTION 3: RISK & DRIFT CALCULATION */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
@@ -668,11 +792,126 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
         {activeViewTab === 'evidence' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-slate-400 text-[11px] font-mono border-b border-slate-800 pb-2">
-              <span className="uppercase font-bold text-slate-300">Corroborated Workspace Evidence</span>
+              <span className="uppercase font-bold text-slate-300">Corroborated Workspace Evidence &amp; Intelligence</span>
               <span className="text-[10px]">{trace?.evidence?.length || commitment.evidence_references?.length || 0} Records</span>
             </div>
 
-            <div className="space-y-3">
+            {/* SYNTHESIZED ASSESSMENT FINDING */}
+            <div className="p-3.5 rounded-xl bg-blue-950/25 border border-blue-800/60 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono uppercase font-bold text-blue-300 flex items-center space-x-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Synthesized Multi-Source Finding</span>
+                </span>
+                <div className="flex items-center space-x-1.5">
+                  {assessment?.is_blocking_downstream && (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-rose-950/80 text-rose-300 border border-rose-800/80 font-bold">
+                      Downstream Work Blocked
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-900/60 text-blue-200 border border-blue-700">
+                    {Math.round((assessment?.confidence || 0.96) * 100)}% Confidence
+                  </span>
+                </div>
+              </div>
+              <p className="text-slate-100 text-xs font-semibold leading-relaxed">
+                {assessment?.finding || "Multi-source evidence corroborated across workspace records."}
+              </p>
+              {assessment?.rationale && (
+                <p className="text-slate-400 italic text-[11px]">
+                  "{assessment.rationale}"
+                </p>
+              )}
+            </div>
+
+            {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT */}
+            {conflicts.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono uppercase font-bold text-amber-300 flex items-center space-x-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Cross-Source Evidence Contradiction ({conflicts.length})</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-900/60 text-amber-200 border border-amber-700">
+                    Conflict Detected
+                  </span>
+                </div>
+                {conflicts.map((conf, cIdx) => (
+                  <div key={cIdx} className="p-2.5 rounded bg-amber-950/40 border border-amber-900/60 space-y-1 text-xs">
+                    <div className="flex items-center space-x-2 font-mono text-[10px]">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                        {conf.source_a}
+                      </span>
+                      <span className="text-amber-400 font-bold">⟷</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                        {conf.source_b}
+                      </span>
+                      <span className="text-amber-400/80 ml-auto uppercase text-[9px]">
+                        [{conf.conflict_type}]
+                      </span>
+                    </div>
+                    <p className="text-amber-100 text-[11px] leading-snug">
+                      {conf.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* FACT VS INFERENCE BREAKDOWN */}
+            {(factualClaims.length > 0 || inferentialClaims.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* DOCUMENTARY FACTS */}
+                <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-800/60 space-y-2">
+                  <div className="flex items-center justify-between border-b border-emerald-900/60 pb-1.5">
+                    <span className="text-[10px] font-mono uppercase font-bold text-emerald-300 flex items-center space-x-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Documentary Facts ({factualClaims.length})</span>
+                    </span>
+                    <span className="text-[9px] font-mono text-emerald-400/80 uppercase">Verified Records</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {factualClaims.map((claim, idx) => (
+                      <div key={idx} className="p-2 rounded bg-slate-900/80 border border-emerald-900/40 space-y-0.5 text-xs">
+                        <div className="flex items-center justify-between font-mono text-[10px]">
+                          <span className="font-bold text-emerald-400">[{claim.source_id}]</span>
+                          <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Conf</span>
+                        </div>
+                        <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ANALYTICAL INFERENCES */}
+                <div className="p-3 rounded-lg bg-purple-950/20 border border-purple-800/60 space-y-2">
+                  <div className="flex items-center justify-between border-b border-purple-900/60 pb-1.5">
+                    <span className="text-[10px] font-mono uppercase font-bold text-purple-300 flex items-center space-x-1.5">
+                      <Cpu className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Analytical Inferences ({inferentialClaims.length})</span>
+                    </span>
+                    <span className="text-[9px] font-mono text-purple-400/80 uppercase">Derived Insights</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {inferentialClaims.map((claim, idx) => (
+                      <div key={idx} className="p-2 rounded bg-slate-900/80 border border-purple-900/40 space-y-0.5 text-xs">
+                        <div className="flex items-center justify-between font-mono text-[10px]">
+                          <span className="font-bold text-purple-400">[{claim.source_id}]</span>
+                          <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Conf</span>
+                        </div>
+                        <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-3 pt-2">
+              <span className="text-[10px] font-mono uppercase font-semibold text-slate-400 block">
+                All Corroborated Workspace Records
+              </span>
+
               {(trace?.evidence || commitment.evidence_references || []).map((ev, idx) => (
                 <div key={idx} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">

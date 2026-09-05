@@ -140,7 +140,15 @@ def build_commitment_decision_trace(com: Commitment, events: List[AgentEvent]) -
             "url_or_path": ev.url_or_path,
         })
 
+    # Evidence Assessment (Synthesized Multi-Source Intelligence & Conflict Detection)
+    evidence_assessment = None
+    if com.evidence_assessment:
+        evidence_assessment = com.evidence_assessment.model_dump(mode="json")
+    elif com.metadata and "evidence_assessment" in com.metadata:
+        evidence_assessment = com.metadata["evidence_assessment"]
+
     # 3. Risk Assessment
+
     risk_event = next(
         (e for e in sorted_events if e.action_name in ("CALCULATE_RISK", "EVALUATE_RISK") or e.event_type in ("RISK", "EVALUATION")),
         None,
@@ -500,7 +508,9 @@ def build_commitment_decision_trace(com: Commitment, events: List[AgentEvent]) -
         "commitment": com_data,
         "stages": stages,
         "evidence": evidence_items,
+        "evidence_assessment": evidence_assessment,
         "risk": risk_info,
+
         "action": action_info,
         "policy_decision": policy_info,
         "approval": approval_info,
