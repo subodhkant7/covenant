@@ -146,18 +146,12 @@ class CommitmentAgent(BaseAgent):
             )
             discovered_commitments.append(c4)
 
-        # Persist discovered commitments without clobbering advanced lifecycle states
+        # Persist discovered commitments without clobbering existing or advanced lifecycle states
         for com in discovered_commitments:
             if self.commitment_repo:
                 existing = await self.commitment_repo.get_by_id(com.id)
-                if existing and existing.status in [
-                    CommitmentStatus.EXECUTING,
-                    CommitmentStatus.VERIFYING,
-                    CommitmentStatus.RESOLVED,
-                    CommitmentStatus.FAILED,
-                    CommitmentStatus.CANCELLED,
-                    CommitmentStatus.REJECTED,
-                ]:
+                if existing:
+                    # Already discovered and in repository. Preserve existing lifecycle state and action details.
                     continue
                 await self.commitment_repo.save(com)
             evt = await self.emit_event(

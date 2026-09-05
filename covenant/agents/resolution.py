@@ -20,6 +20,19 @@ class ResolutionAgent(BaseAgent):
         if not commitment:
             return AgentResult(agent_name=self.name, success=False, summary=f"Commitment '{cid}' not found.")
 
+        # If commitment already has an active or completed action, preserve it without clobbering
+        if commitment.next_action and commitment.next_action.status in [
+            ActionStatus.AWAITING_APPROVAL,
+            ActionStatus.APPROVED,
+            ActionStatus.COMPLETED,
+        ]:
+            return AgentResult(
+                agent_name=self.name,
+                success=True,
+                summary=f"Commitment '{cid}' already has an active action proposal ({commitment.next_action.id}).",
+                data={"action": commitment.next_action.model_dump(mode="json")},
+            )
+
         events = []
 
         # Determine remedy based on category and status
