@@ -6,10 +6,16 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from agent_runtime.core.contracts.agent import AgentRun
+from agent_runtime.core.contracts.approval import HumanApprovalRequest
+from agent_runtime.core.contracts.context import Task
+from agent_runtime.core.contracts.tool import ToolRequest
+from agent_runtime.core.state.enums import ApprovalState
 from covenant.agents.base import AgentContext
 from covenant.agents.supervisor import SupervisorAgent
 from covenant.domain.enums import (
     ActionStatus,
+    ActionType,
     CommitmentStatus,
     ObligationDirection,
     RiskLevel,
@@ -20,11 +26,13 @@ from covenant.persistence.sqlite_repo import SQLiteCommitmentRepository
 from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
 from covenant.tools import initialize_tools
+from covenant_runtime_bridge.bootstrap import CovenantRuntimeBootstrap, CovenantRuntimeEnvironment
 
 router = APIRouter(prefix="/api")
 
-# Repository and agent singletons for local runtime
+# Repository, runtime environment, and agent singletons for local runtime
 repo = SQLiteCommitmentRepository()
+runtime_env: CovenantRuntimeEnvironment = CovenantRuntimeBootstrap.assemble()
 tools = initialize_tools()
 llm = DeterministicFallbackProvider()
 supervisor = SupervisorAgent(llm=llm, tools=tools, commitment_repo=repo, event_repo=repo)
@@ -218,8 +226,8 @@ async def list_pending_decisions():
 
 @router.post("/decisions/{action_id}/approve")
 async def approve_decision(action_id: str, req: DecisionActionRequest):
-    """Execute human approval on a pending action and dispatch it to the environment."""
-    all_comms = await repo.list_all(status=CommitmentStatus.AWAITING_APPROVAL)
+    """Execute human approval on a pending action and dispatch it to the environment via the authoritative runtime."""
+    all_comms = await repo.list_all()
     target_com: Optional[Commitment] = None
 
     for c in all_comms:
@@ -231,69 +239,214 @@ async def approve_decision(action_id: str, req: DecisionActionRequest):
         raise HTTPException(status_code=404, detail=f"Pending decision for action '{action_id}' not found.")
 
     action = target_com.next_action
+
+    if target_com.status in [CommitmentStatus.REJECTED, CommitmentStatus.CANCELLED]:
+        raise HTTPException(status_code=400, detail=f"Action '{action_id}' cannot be approved: commitment is {target_com.status.value}.")
+
+    # Resolve tool name from action payload or action type
+    tool_name = action.payload.get("tool") or action.payload.get("tool_name")
+    if not tool_name:
+        if action.action_type == ActionType.FOLLOWUP_EMAIL:
+            tool_name = "send_followup"
+        elif action.action_type == ActionType.ESCALATE_DISPUTE:
+            tool_name = "create_escalation"
+        else:
+            tool_name = "send_followup"
+
+    recipient = action.recipient or (target_com.promisor.email if target_com.promisor else None) or "client@example.com"
+    subject = action.subject or f"Follow-up: {target_com.title}"
+    body = action.payload.get("body", action.description)
+
+    # Compute effective arguments
+    effective_args: Dict[str, Any] = {
+        "commitment_id": target_com.id,
+        "recipient_email": recipient,
+        "subject": subject,
+        "body": body,
+    }
+    if req.edited_payload:
+        if "body" in req.edited_payload:
+            body = req.edited_payload["body"]
+            effective_args["body"] = body
+        if "subject" in req.edited_payload:
+            subject = req.edited_payload["subject"]
+            effective_args["subject"] = subject
+        if "recipient" in req.edited_payload:
+            recipient = req.edited_payload["recipient"]
+            effective_args["recipient_email"] = recipient
+
+    for k, v in action.payload.items():
+        if k not in effective_args and k not in ("tool", "tool_name"):
+            effective_args[k] = v
+
+    # 1. Handle Idempotent Replay for already dispatched actions
+    if action.status == ActionStatus.COMPLETED or target_com.status == CommitmentStatus.VERIFYING:
+        tool_spec = runtime_env.tools.get(tool_name)
+        is_idemp = tool_spec.spec.is_idempotent if tool_spec else False
+        idemp_key = runtime_env.engine.idempotency.compute_key(
+            task_id=f"tsk_{target_com.id}",
+            agent_run_id=f"run_{action.id}",
+            tool_name=tool_name,
+            arguments=effective_args,
+            is_tool_idempotent=is_idemp,
+        )
+        cached_obs = None
+        if hasattr(runtime_env.engine.idempotency, "reserve_or_get"):
+            reservation = await runtime_env.engine.idempotency.reserve_or_get(
+                key=idemp_key,
+                tool_name=tool_name,
+                execution_id=f"exec_{uuid4().hex[:8]}",
+            )
+            cached_obs = reservation.cached_observation
+        else:
+            cached_obs = runtime_env.engine.idempotency.get(idemp_key)
+
+        dispatch_data = cached_obs.data if cached_obs and isinstance(cached_obs.data, dict) else ({"result": cached_obs.data} if cached_obs else {})
+        return {
+            "success": True,
+            "message": f"Action '{action_id}' already approved and dispatched (idempotent replay).",
+            "dispatch_details": dispatch_data,
+            "commitment": target_com.model_dump(mode="json"),
+        }
+
+    # 2. Construct authoritative runtime task, run, and tool request
+    task = Task(
+        id=f"tsk_{target_com.id}",
+        organization_id=runtime_env.organization_id,
+        intent=f"Dispatch remedy for {target_com.title}",
+        required_role="covenant.resolver",
+    )
+    run = AgentRun(
+        id=f"run_{action.id}",
+        task_id=task.id,
+        agent_id="covenant.resolver_agent",
+    )
+    tool_req = ToolRequest(
+        request_id=f"req_{action.id}",
+        tool_name=tool_name,
+        arguments=effective_args,
+        rationale=action.approval_reason or "Human authorized recommended action on Decision Surface.",
+    )
+
+    approval_id = f"appr_{action.id}"
+    approval: Optional[HumanApprovalRequest] = None
+
+    # 3. Authoritative Runtime Approval Transition via RuntimeApprovalService
+    if runtime_env.approval_repo:
+        existing_appr = await runtime_env.approval_repo.get(approval_id)
+        if not existing_appr:
+            pending_appr = HumanApprovalRequest(
+                approval_id=approval_id,
+                organization_id=task.organization_id,
+                task_id=task.id,
+                agent_run_id=run.id,
+                tool_request=tool_req,
+                policy_decision_id=getattr(action, "policy_decision_id", None) or f"pol_{action.id}",
+                status=ApprovalState.PENDING,
+            )
+            await runtime_env.approval_repo.create(pending_appr)
+
+        if runtime_env.approval_service:
+            approval = await runtime_env.approval_service.approve_human_request(
+                approval_id=approval_id,
+                organization_id=task.organization_id,
+                task_id=task.id,
+                agent_run_id=run.id,
+                tool_name=tool_name,
+                reviewed_by="User",
+                modified_arguments=effective_args,
+                notes=req.notes or "Approved by user.",
+            )
+        else:
+            approval = await runtime_env.approval_repo.get(approval_id)
+            if approval:
+                approval.status = ApprovalState.APPROVED
+                approval.reviewed_by = "User"
+                approval.reviewer_notes = req.notes or "Approved by user."
+                approval.modified_arguments = effective_args
+    else:
+        approval = HumanApprovalRequest(
+            approval_id=approval_id,
+            organization_id=task.organization_id,
+            task_id=task.id,
+            agent_run_id=run.id,
+            tool_request=tool_req,
+            policy_decision_id=getattr(action, "policy_decision_id", None) or f"pol_{action.id}",
+            status=ApprovalState.APPROVED,
+            reviewed_by="User",
+            reviewer_notes=req.notes or "Approved by user.",
+            modified_arguments=effective_args,
+        )
+
+    # 4. Authoritative Runtime Execution via ExecutionEngine
+    # Governed by: ToolPermissionMatrix, DefaultPolicyEngine, Idempotency, and EventSink
+    obs, _ = await runtime_env.engine.handle_tool_request(
+        task=task,
+        run=run,
+        request=tool_req,
+        approval=approval,
+    )
+
+    if not obs.success:
+        err_msg = obs.error or "Tool execution denied by runtime governance."
+        if "Permission denied" in err_msg or "Policy denied" in err_msg or "denied" in err_msg.lower():
+            raise HTTPException(status_code=403, detail=f"Runtime execution denied: {err_msg}")
+        raise HTTPException(status_code=500, detail=f"Runtime tool execution failed: {err_msg}")
+
+    # 5. Runtime execution succeeded -> Authoritatively update Covenant domain state
     action.status = ActionStatus.APPROVED
     action.decided_at = utc_now()
     action.decision_notes = req.notes or "Approved by user."
     if req.edited_payload:
         action.payload.update(req.edited_payload)
 
-    # 1. Transition state machine to EXECUTING
-    CommitmentStateMachine.transition(
-        commitment=target_com,
-        target_state=CommitmentStatus.EXECUTING,
-        agent_name="HumanUser",
-        reason="Human authorized recommended action on Decision Surface.",
-        approved_by="User",
-    )
-    await repo.save(target_com)
-
-    # 2. Actually execute the action in the workspace environment
-    send_tool = tools.get("send_followup")
-    recipient = action.recipient or target_com.promisor.email or "client@example.com"
-    subject = action.subject or f"Follow-up: {target_com.title}"
-    body = action.payload.get("body", action.description)
-
-    dispatch_res = await send_tool.execute(
-        commitment_id=target_com.id,
-        recipient_email=recipient,
-        subject=subject,
-        body=body,
-    )
+    if CommitmentStateMachine.can_transition(target_com.status, CommitmentStatus.EXECUTING):
+        CommitmentStateMachine.transition(
+            commitment=target_com,
+            target_state=CommitmentStatus.EXECUTING,
+            agent_name="HumanUser",
+            reason="Human authorized recommended action on Decision Surface.",
+            approved_by="User",
+        )
 
     action.status = ActionStatus.COMPLETED
     action.executed_at = utc_now()
 
-    # 3. Transition to VERIFYING (distinguishing action dispatched from outcome verified)
-    CommitmentStateMachine.transition(
-        commitment=target_com,
-        target_state=CommitmentStatus.VERIFYING,
-        agent_name="System",
-        reason=f"Action dispatched into communication stream ({dispatch_res.data.get('sent_email_id')}). Awaiting independent verification of client response.",
-    )
+    if CommitmentStateMachine.can_transition(target_com.status, CommitmentStatus.VERIFYING):
+        CommitmentStateMachine.transition(
+            commitment=target_com,
+            target_state=CommitmentStatus.VERIFYING,
+            agent_name="System",
+            reason=f"Action dispatched through runtime engine into communication stream ({obs.execution_id}). Awaiting independent verification of client response.",
+        )
 
-    # Record event
+    # 6. Record domain event in Covenant audit repository
     await repo.record_event(
         AgentEvent(
             agent="System",
             event_type="DISPATCH_ACTION",
-            summary=f"Dispatched approved action to {recipient}",
+            summary=f"Dispatched approved action to {recipient} via runtime execution engine",
             commitment_id=target_com.id,
-            tool="send_followup",
+            tool=tool_name,
             state_before=CommitmentStatus.EXECUTING,
             state_after=CommitmentStatus.VERIFYING,
             result_status="SUCCESS",
-            rationale="Action authorized and sent. Lifecycle entered VERIFYING stage.",
+            rationale="Action authorized, policy verified, and executed through runtime engine. Lifecycle entered VERIFYING stage.",
+            metadata={"execution_id": obs.execution_id},
         )
     )
 
     await repo.save(target_com)
 
+    dispatch_data = obs.data if isinstance(obs.data, dict) else {"result": obs.data, "execution_id": obs.execution_id}
+
     return {
         "success": True,
-        "message": f"Action '{action_id}' approved and dispatched. Commitment entered VERIFYING stage.",
-        "dispatch_details": dispatch_res.data,
+        "message": f"Action '{action_id}' approved and dispatched through runtime engine. Commitment entered VERIFYING stage.",
+        "dispatch_details": dispatch_data,
         "commitment": target_com.model_dump(mode="json"),
     }
+
 
 
 @router.post("/simulate/reply/{commitment_id}")

@@ -1,10 +1,18 @@
 """Bootstrap: Deterministic assembly of the Covenant runtime bridge environment."""
 
 from dataclasses import dataclass
+from typing import Any, Optional
+
+from agent_runtime.core.approval.service import InMemoryApprovalRepository, RuntimeApprovalService
 from agent_runtime.core.authorization.matrix import ToolPermissionMatrix
+from agent_runtime.core.engine.execution import ExecutionEngine
+from agent_runtime.core.engine.idempotency import IdempotencyStore
 from agent_runtime.core.engine.registry import AgentRegistry, ToolRegistry
 from agent_runtime.core.engine.router import DeterministicTaskRouter
+from agent_runtime.core.interfaces.telemetry import IEventSink
+from agent_runtime.core.persistence.interfaces import IApprovalRepository, IToolExecutionRepository
 from agent_runtime.core.policy.engine import DefaultPolicyEngine
+from agent_runtime.core.telemetry.sink import InMemoryEventSink
 from covenant_runtime_bridge.agents.discovery_agent import AdaptedCommitmentAgent
 from covenant_runtime_bridge.agents.investigator_agent import AdaptedEvidenceAgent
 from covenant_runtime_bridge.agents.resolver_agent import AdaptedResolutionAgent
@@ -22,6 +30,12 @@ class CovenantRuntimeEnvironment:
     policy: DefaultPolicyEngine
     verifier: CovenantVerificationAdapter
     router: DeterministicTaskRouter
+    engine: Optional[ExecutionEngine] = None
+    event_sink: Optional[IEventSink] = None
+    idempotency: Optional[Any] = None
+    approval_service: Optional[RuntimeApprovalService] = None
+    tool_repo: Optional[IToolExecutionRepository] = None
+    approval_repo: Optional[IApprovalRepository] = None
 
 
 class CovenantRuntimeBootstrap:
@@ -32,7 +46,14 @@ class CovenantRuntimeBootstrap:
     ORGANIZATION_ID = "org_covenant_northstar"
 
     @classmethod
-    def assemble(cls, organization_id: str = None) -> CovenantRuntimeEnvironment:
+    def assemble(
+        cls,
+        organization_id: str = None,
+        event_sink: Optional[IEventSink] = None,
+        idempotency_store: Optional[Any] = None,
+        tool_execution_repo: Optional[IToolExecutionRepository] = None,
+        approval_repo: Optional[IApprovalRepository] = None,
+    ) -> CovenantRuntimeEnvironment:
         org_id = organization_id or cls.ORGANIZATION_ID
 
         # 1. Tools
@@ -85,6 +106,26 @@ class CovenantRuntimeBootstrap:
         # 6. Verifier
         verifier = CovenantVerificationAdapter()
 
+        # 7. Authoritative Execution Engine & Services
+        sink = event_sink or InMemoryEventSink()
+        idemp = idempotency_store or IdempotencyStore()
+        app_repo = approval_repo or InMemoryApprovalRepository()
+
+        engine = ExecutionEngine(
+            tool_registry=tools,
+            permissions=permissions,
+            policy_engine=policy,
+            event_sink=sink,
+            idempotency_store=idemp,
+            tool_execution_repo=tool_execution_repo,
+            approval_repo=app_repo,
+        )
+
+        approval_service = RuntimeApprovalService(
+            approval_repository=app_repo,
+            event_sink=sink,
+        )
+
         return CovenantRuntimeEnvironment(
             organization_id=org_id,
             tools=tools,
@@ -93,4 +134,10 @@ class CovenantRuntimeBootstrap:
             policy=policy,
             verifier=verifier,
             router=router,
+            engine=engine,
+            event_sink=sink,
+            idempotency=idemp,
+            approval_service=approval_service,
+            tool_repo=tool_execution_repo,
+            approval_repo=app_repo,
         )
