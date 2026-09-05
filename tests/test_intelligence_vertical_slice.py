@@ -245,7 +245,7 @@ async def test_d_risk_drift_calculation(clean_workspace, isolated_repo):
 
     com = await isolated_repo.get_by_id("com_atlas_approval")
     assert com is not None
-    assert com.risk == RiskLevel.MEDIUM
+    assert com.risk == RiskLevel.HIGH
     assert com.status == CommitmentStatus.OVERDUE
 
 
@@ -373,7 +373,7 @@ async def test_g_api_visibility(clean_workspace, isolated_repo, monkeypatch):
         atlas_decision = next((d for d in decisions if d["commitment_id"] == "com_atlas_approval"), None)
         assert atlas_decision is not None
         assert atlas_decision["commitment_title"] == "Meridian Global Phase 2 Deliverable Formal Sign-Off"
-        assert atlas_decision["risk"] == "MEDIUM"
+        assert atlas_decision["risk"] == "HIGH"
         assert atlas_decision["promisor"]["name"] == "Sarah Jenkins"
         assert atlas_decision["promisee"]["name"] == "Alex North"
 
@@ -399,7 +399,7 @@ async def test_g_api_visibility(clean_workspace, isolated_repo, monkeypatch):
         assert single_resp.status_code == 200
         com_payload = single_resp.json()
         assert com_payload["status"] == "AWAITING_APPROVAL"
-        assert com_payload["risk"] == "MEDIUM"
+        assert com_payload["risk"] == "HIGH"
 
     # Verify side effect was NOT executed
     assert not any(e["id"].startswith("EML-OUT-") for e in clean_workspace.emails)
@@ -438,7 +438,7 @@ async def test_end_to_end_intelligence_workflow(clean_workspace, isolated_repo, 
         # Decision exists on surface
         atlas = next((d for d in decisions if d["commitment_id"] == "com_atlas_approval"), None)
         assert atlas is not None
-        assert atlas["risk"] == "MEDIUM"
+        assert atlas["risk"] == "HIGH"
         assert atlas["action"]["status"] == "AWAITING_APPROVAL"
 
         # Side effects NOT executed

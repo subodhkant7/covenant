@@ -132,6 +132,9 @@ class CalculateRiskTool(BaseTool):
         financial_impact: float = 0.0,
         elapsed_seconds: Optional[float] = None,
         hours_overdue: Optional[float] = None,
+        has_conflict: bool = False,
+        has_evidence_gap: bool = False,
+        recommended_risk: Optional[str] = None,
         **kwargs: Any,
     ) -> ToolResult:
         if elapsed_seconds is not None:
@@ -154,9 +157,18 @@ class CalculateRiskTool(BaseTool):
                 },
             )
 
-        if days_overdue >= 5.0 or (is_blocking_downstream and days_overdue >= 2.0) or financial_impact > 10000:
+        if (
+            recommended_risk == RiskLevel.HIGH.value
+            or days_overdue >= 5.0
+            or (is_blocking_downstream and (days_overdue >= 2.0 or has_conflict or has_evidence_gap))
+            or financial_impact > 10000
+        ):
             risk = RiskLevel.HIGH
-            rationale = f"Overdue by {days_overdue:.1f} days with downstream blocking impact or financial risk."
+            rationale = (
+                f"Overdue by {days_overdue:.1f} days with downstream blocking impact on dependent deliverables."
+                if is_blocking_downstream
+                else f"Overdue by {days_overdue:.1f} days with high contract stakes or financial risk."
+            )
         elif days_overdue >= 2.0 or is_blocking_downstream:
             risk = RiskLevel.MEDIUM
             rationale = f"Overdue by {days_overdue:.1f} days; attention required to prevent escalation."

@@ -56,8 +56,8 @@ def evidence_agent(tools, isolated_repo):
 
 
 @pytest.mark.asyncio
-async def test_atlas_evidence_synthesis_and_conflict_detection(clean_workspace, isolated_repo, evidence_agent):
-    """Verify that EvidenceAgent synthesizes Atlas evidence and detects project vs communication conflict."""
+async def test_atlas_evidence_synthesis_and_corroboration(clean_workspace, isolated_repo, evidence_agent):
+    """Verify that EvidenceAgent synthesizes Atlas evidence, corroborates records, detects evidence gaps, and avoids false contradictions."""
     # Seed Atlas commitment
     atlas_com = Commitment(
         id="com_atlas_approval",
@@ -91,6 +91,7 @@ async def test_atlas_evidence_synthesis_and_conflict_detection(clean_workspace, 
     updated = await isolated_repo.get_by_id("com_atlas_approval")
     assert updated is not None
     assert updated.evidence_assessment is not None
+    assert updated.risk == RiskLevel.HIGH
 
     assessment: EvidenceAssessment = updated.evidence_assessment
     assert "overdue" in assessment.finding.lower()
@@ -104,19 +105,61 @@ async def test_atlas_evidence_synthesis_and_conflict_detection(clean_workspace, 
     assert prj_claim.is_fact is True
     assert "Milestone 2" in prj_claim.claim
 
-    # Verify conflict detection
-    assert len(assessment.conflicts) >= 1
-    conflict = assessment.conflicts[0]
-    assert conflict.source_a == "PRJ-ATLAS"
-    assert conflict.source_b == "INBOX_SCAN"
-    assert conflict.conflict_type == "STATUS_CONTRADICTION"
-    assert conflict.severity == RiskLevel.HIGH
+    # Verify semantic correctness: Corroboration and Evidence Gap, NOT false contradiction
+    assert len(assessment.corroborations) >= 1
+    assert "corroborate" in assessment.corroborations[0].lower()
+    assert len(assessment.evidence_gaps) >= 1
+    assert "absent" in assessment.evidence_gaps[0].lower() or "missing" in assessment.evidence_gaps[0].lower()
+    assert assessment.conflicts == []  # PRJ-ATLAS and INBOX_SCAN agree sign-off is pending
 
     # Verify audit events recorded
     events = await isolated_repo.list_events(commitment_id="com_atlas_approval")
     synth_events = [e for e in events if e.action_name == "SYNTHESIZE_EVIDENCE"]
-    conflict_events = [e for e in events if e.action_name == "EVIDENCE_CONFLICT_DETECTED"]
     assert len(synth_events) >= 1
+
+
+@pytest.mark.asyncio
+async def test_apex_evidence_synthesis_genuine_contradiction(clean_workspace, isolated_repo, evidence_agent):
+    """Verify that genuine contradictory evidence (promised complete vs held invoice / machine error) is captured as a contradiction."""
+    apex_com = Commitment(
+        id="com_apex_repair",
+        title="Apex Industrial CNC Laser Head Calibration & Repair",
+        description="Marcus Vance guaranteed laser head calibration complete by Sep 2.",
+        promisor=Party(name="Marcus Vance", organization="Apex Industrial Repairs", role="PROMISOR"),
+        promisee=Party(name="Alex North", organization="Northstar Studio", role="PROMISEE"),
+        due_date=datetime(2026, 9, 2, 18, 0, tzinfo=timezone.utc),
+        status=CommitmentStatus.ACTIVE,
+        evidence_references=[
+            EvidenceReference(
+                source_type=EvidenceSourceType.EMAIL,
+                source_id="EML-201",
+                title="Repair Promise",
+                snippet="Repair 100% complete and tested by Sep 2 EOD.",
+            )
+        ],
+    )
+    await isolated_repo.save(apex_com)
+
+    context = AgentContext(
+        session_id="sess_apex_evidence",
+        target_commitment_id="com_apex_repair",
+    )
+    result = await evidence_agent.run(context)
+    assert result.success is True
+
+    updated = await isolated_repo.get_by_id("com_apex_repair")
+    assert updated is not None
+    assert updated.evidence_assessment is not None
+    assert len(updated.evidence_assessment.conflicts) >= 1
+
+    conflict = updated.evidence_assessment.conflicts[0]
+    assert conflict.source_a == "EML-201"
+    assert conflict.source_b == "INV-APEX-992"
+    assert conflict.conflict_type == "STATUS_CONTRADICTION"
+    assert conflict.severity == RiskLevel.HIGH
+
+    events = await isolated_repo.list_events(commitment_id="com_apex_repair")
+    conflict_events = [e for e in events if e.action_name == "EVIDENCE_CONFLICT_DETECTED"]
     assert len(conflict_events) >= 1
 
 

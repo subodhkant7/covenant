@@ -79,6 +79,8 @@ class EvidenceAgent(BaseAgent):
         """
         claims: List[EvidenceClaim] = []
         conflicts: List[EvidenceConflict] = []
+        corroborations: List[str] = []
+        evidence_gaps: List[str] = []
         is_blocking = False
         finding = ""
         rationale = ""
@@ -126,27 +128,25 @@ class EvidenceAgent(BaseAgent):
             claims.append(
                 EvidenceClaim(
                     source_id="DERIVED_ANALYSIS",
-                    claim="Downstream engineering kickoff for Phase 3 is obstructed; counterparty sign-off SLA is breached.",
+                    claim="Formal sign-off SLA breached; Phase 3 engineering kickoff blocked on client approval.",
                     is_fact=False,
-                    relevance="MEDIUM",
-                    confidence=0.89,
+                    relevance="HIGH",
+                    confidence=0.92,
                 )
             )
 
-            # Conflict Detection: Milestone submitted awaiting sign-off CONFLICTS WITH no sign-off received past deadline
+            # Define semantic relationships accurately (Phase 5):
+            # PRJ-ATLAS and INBOX_SCAN corroborate that Phase 2 was submitted and approval remains outstanding
+            corroborations.append(
+                "PRJ-ATLAS and INBOX_SCAN independently corroborate that Phase 2 was submitted and formal sign-off remains unreceived."
+            )
             if not has_approval:
-                conflicts.append(
-                    EvidenceConflict(
-                        source_a="PRJ-ATLAS",
-                        source_b="INBOX_SCAN",
-                        description="Project Atlas milestone submitted awaiting formal sign-off (blocking Phase 3), but communication records show zero sign-off received after Sep 5 deadline.",
-                        conflict_type="STATUS_CONTRADICTION",
-                        severity=RiskLevel.HIGH,
-                    )
+                evidence_gaps.append(
+                    "Formal written sign-off email from Sarah Jenkins (promised for Sep 5 at 5 PM EST per EML-102) is absent from inbox records."
                 )
 
             finding = "Client approval overdue by timeline; Phase 3 frontend implementation blocked."
-            rationale = "Project records verify deliverable submission on Sep 3, while communications scan confirms absence of promised formal approval by Sep 5."
+            rationale = "Project records and inbox scan corroborate deliverable submission on Sep 3 with absence of promised sign-off by Sep 5. Downstream Phase 3 engineering kickoff is blocked."
 
         # 2. Evaluate Apex Industrial Scenario
         elif "apex" in commitment.id.lower():
@@ -210,12 +210,18 @@ class EvidenceAgent(BaseAgent):
             rationale = "Synthesized multi-source workspace signals into verified factual claims."
             confidence = 0.90
 
-        rec_risk = RiskLevel.HIGH if (is_blocking and conflicts) else (RiskLevel.MEDIUM if (is_blocking or conflicts) else RiskLevel.LOW)
+        rec_risk = (
+            RiskLevel.HIGH
+            if (is_blocking and (conflicts or evidence_gaps))
+            else (RiskLevel.MEDIUM if (is_blocking or conflicts or evidence_gaps) else RiskLevel.LOW)
+        )
 
         return EvidenceAssessment(
             finding=finding,
             factual_claims=claims,
             conflicts=conflicts,
+            corroborations=corroborations,
+            evidence_gaps=evidence_gaps,
             confidence=confidence,
             is_blocking_downstream=is_blocking,
             recommended_risk=rec_risk,
@@ -292,7 +298,7 @@ class EvidenceAgent(BaseAgent):
         # Audit event for synthesis
         synth_evt = await self.emit_event(
             action_name="SYNTHESIZE_EVIDENCE",
-            summary=f"Synthesized {len(assessment.factual_claims)} evidence claims for '{commitment.title}' (Conflicts: {len(assessment.conflicts)}).",
+            summary=f"Synthesized {len(assessment.factual_claims)} evidence claims for '{commitment.title}' (Corroborations: {len(assessment.corroborations)}, Gaps: {len(assessment.evidence_gaps)}, Conflicts: {len(assessment.conflicts)}).",
             commitment_id=commitment.id,
             rationale=assessment.rationale,
             metadata={
@@ -300,6 +306,8 @@ class EvidenceAgent(BaseAgent):
                 "confidence": assessment.confidence,
                 "claims_count": len(assessment.factual_claims),
                 "conflicts_count": len(assessment.conflicts),
+                "corroborations_count": len(assessment.corroborations),
+                "evidence_gaps_count": len(assessment.evidence_gaps),
                 "is_blocking_downstream": assessment.is_blocking_downstream,
             },
         )
@@ -361,6 +369,9 @@ class EvidenceAgent(BaseAgent):
                 financial_impact=float(commitment.metadata.get("financial_impact", 0.0)),
                 elapsed_seconds=elapsed_seconds,
                 hours_overdue=hours_overdue,
+                has_conflict=bool(assessment.conflicts),
+                has_evidence_gap=bool(assessment.evidence_gaps),
+                recommended_risk=assessment.recommended_risk.value if assessment else None,
             )
             if risk_res.success:
                 commitment.risk = RiskLevel(risk_res.data["risk"])

@@ -265,10 +265,10 @@ async def test_repeated_evaluation_is_deterministic(clean_workspace, temp_repo):
         res2 = await evidence_agent.run(ctx)
         com2 = await temp_repo.get_by_id("com_atlas_approval")
 
-        assert res1.data["risk"] == res2.data["risk"] == RiskLevel.MEDIUM.value
+        assert res1.data["risk"] == res2.data["risk"] == RiskLevel.HIGH.value
         assert res1.data["days_overdue"] == res2.data["days_overdue"]
         assert com1.status == com2.status == CommitmentStatus.OVERDUE
-        assert com1.risk == com2.risk == RiskLevel.MEDIUM
+        assert com1.risk == com2.risk == RiskLevel.HIGH
 
 
 # ==============================================================================
@@ -361,8 +361,8 @@ async def test_atlas_scenario_regression_fixed_clock(clean_workspace, temp_repo)
         assert res.data["is_overdue"] is True
         assert res.data["elapsed_seconds"] == 68400.0
         assert res.data["hours_overdue"] == 19.0
-        assert res.data["risk"] == RiskLevel.MEDIUM.value
+        assert res.data["risk"] == RiskLevel.HIGH.value
 
         updated_com = await temp_repo.get_by_id("com_atlas_approval")
-        assert updated_com.risk == RiskLevel.MEDIUM
+        assert updated_com.risk == RiskLevel.HIGH
         assert updated_com.status == CommitmentStatus.OVERDUE

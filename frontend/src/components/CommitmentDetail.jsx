@@ -91,6 +91,8 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
   const factualClaims = assessment?.factual_claims?.filter(c => c.is_fact) || [];
   const inferentialClaims = assessment?.factual_claims?.filter(c => !c.is_fact) || [];
   const conflicts = assessment?.conflicts || [];
+  const corroborations = assessment?.corroborations || [];
+  const evidenceGaps = assessment?.evidence_gaps || [];
 
 
   // Status visual attributes
@@ -289,7 +291,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                   <Activity className="w-3.5 h-3.5 text-blue-400" />
                   <span>Authoritative Lifecycle Sequence</span>
                 </span>
-                <span className="text-[10px] font-mono text-slate-400">10 Verified Stages</span>
+                <span className="text-[10px] font-mono text-slate-400">{trace?.stages?.length || 10} Decision Stages</span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[10px] font-mono">
@@ -412,33 +414,73 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                   )}
                 </div>
 
-                {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT */}
-                {conflicts.length > 0 && (
-                  <div className="p-3 rounded-lg bg-amber-950/25 border border-amber-500/60 space-y-2">
+                {/* CROSS-SOURCE CORROBORATION */}
+                {corroborations.length > 0 && (
+                  <div className="p-3 rounded-lg bg-emerald-950/25 border border-emerald-500/50 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase font-bold text-emerald-300 flex items-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Cross-Source Corroboration ({corroborations.length})</span>
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-900/60 text-emerald-200 border border-emerald-700">
+                        Corroborated
+                      </span>
+                    </div>
+                    {corroborations.map((corr, cIdx) => (
+                      <p key={cIdx} className="text-emerald-100 text-[11px] leading-snug">
+                        {corr}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* EVIDENCE GAP / MISSING EXPECTED RECORD */}
+                {evidenceGaps.length > 0 && (
+                  <div className="p-3 rounded-lg bg-amber-950/25 border border-amber-500/50 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono uppercase font-bold text-amber-300 flex items-center space-x-1.5">
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span>Cross-Source Contradiction Detected ({conflicts.length})</span>
+                        <span>Expected Evidence Gap / Missing Record ({evidenceGaps.length})</span>
                       </span>
                       <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-900/60 text-amber-200 border border-amber-700">
-                        Tension Alert
+                        Evidence Gap
+                      </span>
+                    </div>
+                    {evidenceGaps.map((gap, gIdx) => (
+                      <p key={gIdx} className="text-amber-100 text-[11px] leading-snug">
+                        {gap}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT (GENUINE CONTRADICTIONS ONLY) */}
+                {conflicts.length > 0 && (
+                  <div className="p-3 rounded-lg bg-rose-950/25 border border-rose-500/60 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase font-bold text-rose-300 flex items-center space-x-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>Cross-Source Contradiction Detected ({conflicts.length})</span>
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-rose-900/60 text-rose-200 border border-rose-700">
+                        Conflict Alert
                       </span>
                     </div>
                     {conflicts.map((conf, cIdx) => (
-                      <div key={cIdx} className="p-2.5 rounded bg-amber-950/40 border border-amber-900/60 space-y-1 text-xs">
+                      <div key={cIdx} className="p-2.5 rounded bg-rose-950/40 border border-rose-900/60 space-y-1 text-xs">
                         <div className="flex items-center space-x-2 font-mono text-[10px]">
-                          <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                          <span className="px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200 font-bold border border-rose-700/60">
                             {conf.source_a}
                           </span>
-                          <span className="text-amber-400 font-bold">⟷</span>
-                          <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                          <span className="text-rose-400 font-bold">⟷</span>
+                          <span className="px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200 font-bold border border-rose-700/60">
                             {conf.source_b}
                           </span>
-                          <span className="text-amber-400/80 ml-auto uppercase text-[9px]">
+                          <span className="text-rose-400/80 ml-auto uppercase text-[9px]">
                             [{conf.conflict_type}]
                           </span>
                         </div>
-                        <p className="text-amber-100 text-[11px] leading-snug">
+                        <p className="text-rose-100 text-[11px] leading-snug">
                           {conf.description}
                         </p>
                       </div>
@@ -824,33 +866,73 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
               )}
             </div>
 
-            {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT */}
-            {conflicts.length > 0 && (
-              <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/60 space-y-2">
+            {/* CROSS-SOURCE CORROBORATION */}
+            {corroborations.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-emerald-950/25 border border-emerald-500/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono uppercase font-bold text-emerald-300 flex items-center space-x-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>Cross-Source Corroboration ({corroborations.length})</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-900/60 text-emerald-200 border border-emerald-700">
+                    Corroborated
+                  </span>
+                </div>
+                {corroborations.map((corr, cIdx) => (
+                  <p key={cIdx} className="text-emerald-100 text-[11px] leading-snug">
+                    {corr}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* EVIDENCE GAP / MISSING RECORD */}
+            {evidenceGaps.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-amber-950/25 border border-amber-500/50 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-mono uppercase font-bold text-amber-300 flex items-center space-x-1.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Cross-Source Evidence Contradiction ({conflicts.length})</span>
+                    <span>Expected Evidence Gap / Missing Record ({evidenceGaps.length})</span>
                   </span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-amber-900/60 text-amber-200 border border-amber-700">
+                    Evidence Gap
+                  </span>
+                </div>
+                {evidenceGaps.map((gap, gIdx) => (
+                  <p key={gIdx} className="text-amber-100 text-[11px] leading-snug">
+                    {gap}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* CROSS-SOURCE EVIDENCE CONFLICT ALERT (GENUINE CONTRADICTIONS ONLY) */}
+            {conflicts.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-rose-950/25 border border-rose-500/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-mono uppercase font-bold text-rose-300 flex items-center space-x-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span>Cross-Source Evidence Contradiction ({conflicts.length})</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-rose-900/60 text-rose-200 border border-rose-700">
                     Conflict Detected
                   </span>
                 </div>
                 {conflicts.map((conf, cIdx) => (
-                  <div key={cIdx} className="p-2.5 rounded bg-amber-950/40 border border-amber-900/60 space-y-1 text-xs">
+                  <div key={cIdx} className="p-2.5 rounded bg-rose-950/40 border border-rose-900/60 space-y-1 text-xs">
                     <div className="flex items-center space-x-2 font-mono text-[10px]">
-                      <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                      <span className="px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200 font-bold border border-rose-700/60">
                         {conf.source_a}
                       </span>
-                      <span className="text-amber-400 font-bold">⟷</span>
-                      <span className="px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 font-bold border border-amber-700/60">
+                      <span className="text-rose-400 font-bold">⟷</span>
+                      <span className="px-1.5 py-0.5 rounded bg-rose-900/80 text-rose-200 font-bold border border-rose-700/60">
                         {conf.source_b}
                       </span>
-                      <span className="text-amber-400/80 ml-auto uppercase text-[9px]">
+                      <span className="text-rose-400/80 ml-auto uppercase text-[9px]">
                         [{conf.conflict_type}]
                       </span>
                     </div>
-                    <p className="text-amber-100 text-[11px] leading-snug">
+                    <p className="text-rose-100 text-[11px] leading-snug">
                       {conf.description}
                     </p>
                   </div>

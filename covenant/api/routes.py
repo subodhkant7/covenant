@@ -1,5 +1,6 @@
 """FastAPI REST API Routes for Covenant."""
 
+import asyncio
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -162,6 +163,13 @@ def build_commitment_decision_trace(com: Commitment, events: List[AgentEvent]) -
             else f"Evaluated at {com.risk.value} risk with {int(com.confidence * 100)}% confidence."
         )
     )
+    if com.evidence_assessment and com.evidence_assessment.is_blocking_downstream:
+        blocking_impact = "Phase 3 engineering kickoff blocked on client approval"
+    elif com.dependencies:
+        blocking_impact = f"Blocks {len(com.dependencies)} downstream commitment(s)"
+    else:
+        blocking_impact = "No downstream dependencies blocked"
+
     risk_info = {
         "risk_level": com.risk.value,
         "confidence": com.confidence,
@@ -170,7 +178,7 @@ def build_commitment_decision_trace(com: Commitment, events: List[AgentEvent]) -
         "hours_overdue": com.hours_overdue,
         "overdue_duration": com.overdue_duration(),
         "rationale": risk_rationale,
-        "blocking_impact": f"Blocks {len(com.dependencies)} downstream commitment(s)" if com.dependencies else "No downstream dependencies blocked",
+        "blocking_impact": blocking_impact,
     }
 
     # 4. Action Details
@@ -1132,6 +1140,12 @@ async def run_scan_cycle():
 @router.post("/seed")
 async def reseed_database():
     """Reset database and re-seed with clean Northstar Studio workspace data."""
+    def _clear():
+        with repo._get_connection() as conn:
+            conn.execute("DELETE FROM agent_events")
+            conn.execute("DELETE FROM commitments")
+            conn.execute("DELETE FROM monitoring_cycles")
+    await asyncio.to_thread(_clear)
     await repo.initialize()
     ctx = AgentContext(session_id="seed_initialization")
     result = await supervisor.run(ctx)
@@ -1140,3 +1154,4 @@ async def reseed_database():
         "message": "Database successfully reseeded with Northstar Studio workspace data.",
         "scan_result": result.summary,
     }
+

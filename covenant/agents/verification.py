@@ -132,17 +132,30 @@ class VerificationAgent(BaseAgent):
                         agent_name=self.name,
                         reason=f"Business outcome verification failed by VerificationGate: {rationale}",
                     )
+        attempt_count = int(commitment.metadata.get("verification_attempts", 0)) + 1
+        commitment.metadata["verification_attempts"] = attempt_count
 
         await self.commitment_repo.save(commitment)
 
+        summary_text = (
+            f"Verification confirmed (check #{attempt_count}) for '{commitment.title}': OUTCOME VERIFIED -> RESOLVED"
+            if is_verified
+            else f"Verification check #{attempt_count} (Autonomous Monitor): Awaiting counterparty response"
+        )
+
         evt = await self.emit_event(
             action_name="VERIFY_RESOLUTION",
-            summary=f"Verification result for '{commitment.title}': {'OUTCOME VERIFIED -> RESOLVED' if is_verified else 'AWAITING RESPONSE'}",
+            summary=summary_text,
             commitment_id=commitment.id,
             tool_name="verify_commitment",
             new_state=commitment.status,
             rationale=rationale,
-            metadata={"gate_verified": is_verified, "evidence_ids": evidence_ids},
+            metadata={
+                "attempt_number": attempt_count,
+                "gate_verified": is_verified,
+                "evidence_ids": evidence_ids,
+                "monitoring_source": "background_monitor",
+            },
         )
         events.append(evt)
 

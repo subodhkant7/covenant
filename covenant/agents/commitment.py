@@ -434,7 +434,7 @@ class CommitmentAgent(BaseAgent):
                 promised_at=dt,
                 due_date=ext.due_date,
                 status=CommitmentStatus.OVERDUE if ext.category in [CommitmentCategory.CLIENT_APPROVAL, CommitmentCategory.CONTRACTOR_REPAIR] else (CommitmentStatus.INVESTIGATING if ext.category == CommitmentCategory.SUPPLIER_SHIPMENT else CommitmentStatus.ACTIVE),
-                risk=RiskLevel.HIGH if ext.category == CommitmentCategory.CONTRACTOR_REPAIR else (RiskLevel.MEDIUM if ext.category in [CommitmentCategory.CLIENT_APPROVAL, CommitmentCategory.SUPPLIER_SHIPMENT] else RiskLevel.LOW),
+                risk=RiskLevel.HIGH if ext.category in [CommitmentCategory.CLIENT_APPROVAL, CommitmentCategory.CONTRACTOR_REPAIR] else (RiskLevel.MEDIUM if ext.category == CommitmentCategory.SUPPLIER_SHIPMENT else RiskLevel.LOW),
                 confidence=ext.confidence,
                 evidence_references=ev_refs,
             )

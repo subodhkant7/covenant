@@ -1,7 +1,8 @@
-"""Tests for Evidence-Driven Decision Intelligence in Covenant UI & Trace API."""
+"""Tests for Evidence-Driven Decision Intelligence, Semantic Correctness, and Demo Integrity in Covenant UI & Trace API."""
 
 from datetime import datetime, timezone
 from pathlib import Path
+import re
 import pytest
 import httpx
 from fastapi import FastAPI
@@ -11,8 +12,10 @@ from covenant.api.routes import (
     llm as default_llm,
     tools as default_tools,
 )
+from covenant.agents.base import AgentContext
 from covenant.agents.evidence import EvidenceAgent
 from covenant.agents.supervisor import SupervisorAgent
+from covenant.agents.verification import VerificationAgent
 from covenant.domain.enums import (
     ActionStatus,
     ActionType,
@@ -79,12 +82,11 @@ async def api_client(tmp_path: Path):
 
 
 async def _seed_atlas_with_evidence_intelligence(test_repo):
-    """Seed Project Atlas commitment with multi-source evidence synthesis."""
+    """Seed Project Atlas commitment with multi-source evidence synthesis, corroboration, and evidence gap."""
     ev1 = EvidenceReference(
         id="ev_atlas_01",
         commitment_id="com_atlas_approval",
         source_type=EvidenceSourceType.PROJECT,
-
         source_id="PRJ-ATLAS",
         title="Project Atlas - Phase 2 Deliverable",
         snippet="Phase 2 deliverables submitted Sep 3. Awaiting client formal sign-off. Phase 3 kickoff blocked.",
@@ -135,25 +137,23 @@ async def _seed_atlas_with_evidence_intelligence(test_repo):
             ),
             EvidenceClaim(
                 source_id="DERIVED_ANALYSIS",
-                claim="Downstream engineering kickoff for Phase 3 is obstructed; counterparty sign-off SLA is breached.",
+                claim="Formal sign-off SLA breached; Phase 3 engineering kickoff blocked on client approval.",
                 is_fact=False,
-                relevance="MEDIUM",
-                confidence=0.89,
+                relevance="HIGH",
+                confidence=0.92,
             ),
         ],
-        conflicts=[
-            EvidenceConflict(
-                source_a="PRJ-ATLAS",
-                source_b="INBOX_SCAN",
-                description="Project Atlas milestone submitted awaiting formal sign-off (blocking Phase 3), but communication records show zero sign-off received after Sep 5 deadline.",
-                conflict_type="STATUS_CONTRADICTION",
-                severity=RiskLevel.HIGH,
-            )
+        conflicts=[],  # Corroborating sources must NOT be mislabeled as contradictions
+        corroborations=[
+            "PRJ-ATLAS and INBOX_SCAN independently corroborate that Phase 2 was submitted and formal sign-off remains unreceived."
+        ],
+        evidence_gaps=[
+            "Formal written sign-off email from Sarah Jenkins (promised for Sep 5 at 5 PM EST per EML-102) is absent from inbox records."
         ],
         confidence=0.96,
         is_blocking_downstream=True,
         recommended_risk=RiskLevel.HIGH,
-        rationale="Project records verify deliverable submission on Sep 3, while communications scan confirms absence of promised formal approval by Sep 5.",
+        rationale="Project records and inbox scan corroborate deliverable submission on Sep 3 with absence of promised sign-off by Sep 5. Downstream Phase 3 engineering kickoff is blocked.",
     )
 
     com = Commitment(
@@ -181,7 +181,7 @@ async def _seed_atlas_with_evidence_intelligence(test_repo):
 async def test_atlas_decision_trace_contains_evidence_intelligence(api_client):
     """
     Asserts that GET /api/commitments/{id}/trace returns structured evidence_assessment
-    containing synthesized findings, factual claims, and conflict detection.
+    containing synthesized findings, factual claims, corroborations, and evidence gaps.
     """
     client, repo, runtime_env, supervisor = api_client
     await _seed_atlas_with_evidence_intelligence(repo)
@@ -223,18 +223,16 @@ async def test_factual_claims_distinguished_from_inferences_in_trace(api_client)
     assert len(facts) >= 2, "Must contain documentary facts from project tracker and inbox"
     assert len(inferences) >= 1, "Must contain derived analytical inference"
 
-    # Verify fact cites a primary documentary source
     assert any("PRJ" in f["source_id"] for f in facts)
     assert any("INBOX" in f["source_id"] for f in facts)
-    # Verify inference is marked as non-factual deduction
     assert any("DERIVED" in inf["source_id"] for inf in inferences)
 
 
 @pytest.mark.asyncio
-async def test_conflict_information_preserved_in_trace(api_client):
+async def test_corroboration_and_evidence_gaps_distinguished_from_contradiction_in_trace(api_client):
     """
-    Verifies that cross-source contradictions (e.g. project tracker expecting sign-off vs inbox scan empty)
-    are captured, typed, and returned in the trace.
+    Verifies that compatible sources (PRJ-ATLAS awaiting sign-off + INBOX_SCAN empty) are categorized
+    as corroboration and evidence gap rather than falsely labeled as a contradiction.
     """
     client, repo, runtime_env, supervisor = api_client
     await _seed_atlas_with_evidence_intelligence(repo)
@@ -245,14 +243,162 @@ async def test_conflict_information_preserved_in_trace(api_client):
 
     assessment = data.get("evidence_assessment")
     assert assessment is not None
-    conflicts = assessment.get("conflicts", [])
-    assert len(conflicts) >= 1, "Atlas scenario must detect cross-source tension"
 
-    conflict = conflicts[0]
-    assert "PRJ-ATLAS" in (conflict["source_a"] + conflict["source_b"])
-    assert "INBOX" in (conflict["source_a"] + conflict["source_b"])
-    assert conflict["conflict_type"] == "STATUS_CONTRADICTION"
-    assert "deadline" in conflict["description"].lower() or "sign-off" in conflict["description"].lower()
+    # Corroboration captured
+    corroborations = assessment.get("corroborations", [])
+    assert len(corroborations) >= 1
+    assert "corroborate" in corroborations[0].lower()
+
+    # Evidence gap captured
+    gaps = assessment.get("evidence_gaps", [])
+    assert len(gaps) >= 1
+    assert "absent" in gaps[0].lower() or "missing" in gaps[0].lower()
+
+    # Compatible records are NOT mislabeled as contradictions
+    conflicts = assessment.get("conflicts", [])
+    assert len(conflicts) == 0
+
+
+@pytest.mark.asyncio
+async def test_genuine_contradiction_preserved_in_trace(api_client):
+    """
+    Verifies that genuine contradictions (e.g. promised repair complete vs invoice held with machine error)
+    are strictly captured as contradictions.
+    """
+    client, repo, runtime_env, supervisor = api_client
+
+    apex_assessment = EvidenceAssessment(
+        finding="Repair incomplete past Sep 2 commitment date; fabrication workshop remains blocked.",
+        conflicts=[
+            EvidenceConflict(
+                source_a="EML-201",
+                source_b="INV-APEX-992",
+                description="Repair completion promised for Sep 2, but invoice held and machine telemetry indicates unresolved error E-402.",
+                conflict_type="STATUS_CONTRADICTION",
+                severity=RiskLevel.HIGH,
+            )
+        ],
+        is_blocking_downstream=True,
+        recommended_risk=RiskLevel.HIGH,
+    )
+    apex_com = Commitment(
+        id="com_apex_repair",
+        title="Apex Industrial CNC Laser Head Calibration & Repair",
+        description="Marcus Vance guaranteed laser head calibration complete by Sep 2.",
+        promisor=Party(name="Marcus Vance", organization="Apex Industrial Repairs", role="PROMISOR"),
+        promisee=Party(name="Alex North", organization="Northstar Studio", role="PROMISEE"),
+        status=CommitmentStatus.OVERDUE,
+        risk=RiskLevel.HIGH,
+        evidence_assessment=apex_assessment,
+    )
+    await repo.save(apex_com)
+
+    resp = await client.get("/api/commitments/com_apex_repair/trace")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assessment = data.get("evidence_assessment")
+    assert assessment is not None
+    conflicts = assessment.get("conflicts", [])
+    assert len(conflicts) == 1
+    assert conflicts[0]["conflict_type"] == "STATUS_CONTRADICTION"
+    assert "error" in conflicts[0]["description"].lower() or "invoice" in conflicts[0]["description"].lower()
+
+
+@pytest.mark.asyncio
+async def test_atlas_risk_and_downstream_blocking_consistent_across_surfaces(api_client):
+    """
+    Ensures Atlas risk is HIGH and downstream blocking state is consistently represented
+    across commitment API, decision trace API, and decisions surface.
+    """
+    client, repo, runtime_env, supervisor = api_client
+    await _seed_atlas_with_evidence_intelligence(repo)
+
+    # 1. Commitment API
+    com_resp = await client.get("/api/commitments/com_atlas_approval")
+    assert com_resp.status_code == 200
+    com_data = com_resp.json()
+    assert com_data["risk"] == "HIGH"
+    assert com_data["evidence_assessment"]["is_blocking_downstream"] is True
+
+    # 2. Trace API
+    trace_resp = await client.get("/api/commitments/com_atlas_approval/trace")
+    assert trace_resp.status_code == 200
+    trace_data = trace_resp.json()
+    assert trace_data["current_risk"] == "HIGH"
+    assert trace_data["risk"]["risk_level"] == "HIGH"
+    # Must NOT claim "No downstream dependencies blocked" when evidence assessment proves downstream work is blocked
+    assert "No downstream dependencies blocked" not in trace_data["risk"]["blocking_impact"]
+    assert "Phase 3" in trace_data["risk"]["blocking_impact"] or "blocked" in trace_data["risk"]["blocking_impact"].lower()
+
+    # 3. Decision Surface
+    dec_resp = await client.get("/api/decisions")
+    assert dec_resp.status_code == 200
+    decisions = dec_resp.json()
+    atlas_dec = next((d for d in decisions if d["commitment_id"] == "com_atlas_approval"), None)
+    assert atlas_dec is not None
+    assert atlas_dec["risk"] == "HIGH"
+
+
+def test_decision_trace_heading_is_not_misleadingly_verified():
+    """
+    Regression test: Ensures UI code does not claim all 10 sequence stages are 'Verified'.
+    Labels sequence accurately as 'Decision Stages' or 'Lifecycle Sequence'.
+    """
+    detail_path = Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "CommitmentDetail.jsx"
+    assert detail_path.exists()
+    content = detail_path.read_text()
+
+    # Must NOT contain "10 Verified Stages"
+    assert "10 Verified Stages" not in content
+    # Must contain accurate label
+    assert "Decision Stages" in content or "Lifecycle Stages" in content
+
+
+@pytest.mark.asyncio
+async def test_verification_attempt_telemetry_numbering(tmp_path):
+    """
+    Verifies that autonomous verification monitoring cycles emit attempt numbers
+    to clearly show structured monitoring attempts rather than runaway duplicate events.
+    """
+    db_path = tmp_path / "test_telemetry.db"
+    isolated_repo = SQLiteCommitmentRepository(db_path)
+    await isolated_repo.initialize()
+
+    from covenant.tools import initialize_tools
+    tools = initialize_tools()
+    com = Commitment(
+        id="com_verif_telemetry",
+        title="Telemetry Verification Test",
+        description="Testing verification attempt count",
+        promisor=Party(name="Test Promisor"),
+        promisee=Party(name="Alex North"),
+        status=CommitmentStatus.VERIFYING,
+        risk=RiskLevel.HIGH,
+    )
+    await isolated_repo.save(com)
+
+    v_agent = VerificationAgent(tools=tools, commitment_repo=isolated_repo, event_repo=isolated_repo)
+    ctx = AgentContext(session_id="verif_cycle_1", target_commitment_id="com_verif_telemetry")
+
+    # Pass 1: Attempt #1
+    await v_agent.run(ctx)
+    events_1 = await isolated_repo.list_events(commitment_id="com_verif_telemetry")
+    v_events_1 = [e for e in events_1 if e.action_name == "VERIFY_RESOLUTION"]
+    assert len(v_events_1) == 1
+    assert "check #1" in v_events_1[0].summary.lower()
+    assert v_events_1[0].metadata.get("attempt_number") == 1
+
+    # Pass 2: Attempt #2
+    await v_agent.run(ctx)
+    events_2 = await isolated_repo.list_events(commitment_id="com_verif_telemetry")
+    v_events_2 = [e for e in events_2 if e.action_name == "VERIFY_RESOLUTION"]
+    assert len(v_events_2) == 2
+    # list_events returns in DESC order: index 0 is newest (attempt 2), index 1 is oldest (attempt 1)
+    assert "check #2" in v_events_2[0].summary.lower()
+    assert v_events_2[0].metadata.get("attempt_number") == 2
+    assert "check #1" in v_events_2[1].summary.lower()
+    assert v_events_2[1].metadata.get("attempt_number") == 1
 
 
 @pytest.mark.asyncio

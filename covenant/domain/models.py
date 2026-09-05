@@ -152,6 +152,8 @@ class EvidenceAssessment(BaseModel):
     finding: str = Field(..., description="Core factual conclusion synthesized across evidence")
     factual_claims: List[EvidenceClaim] = Field(default_factory=list)
     conflicts: List[EvidenceConflict] = Field(default_factory=list)
+    corroborations: List[str] = Field(default_factory=list, description="Cross-source factual agreements")
+    evidence_gaps: List[str] = Field(default_factory=list, description="Missing expected records or confirmations")
     confidence: float = Field(default=0.9, ge=0.0, le=1.0)
     is_blocking_downstream: bool = Field(default=False)
     recommended_risk: RiskLevel = Field(default=RiskLevel.LOW)
