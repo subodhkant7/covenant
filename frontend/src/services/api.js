@@ -24,6 +24,12 @@ export async function fetchCommitment(id) {
   return res.json();
 }
 
+export async function fetchCommitmentTrace(id) {
+  const res = await fetch(`${API_BASE}/commitments/${id}/trace`);
+  if (!res.ok) throw new Error('Failed to fetch commitment decision trace');
+  return res.json();
+}
+
 export async function fetchCommitmentMap() {
   const res = await fetch(`${API_BASE}/map`);
   if (!res.ok) throw new Error('Failed to fetch commitment map');

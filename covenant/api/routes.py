@@ -96,6 +96,437 @@ async def get_commitment(commitment_id: str):
     return com
 
 
+def build_commitment_decision_trace(com: Commitment, events: List[AgentEvent]) -> Dict[str, Any]:
+    """
+    Assemble the authoritative Commitment Decision Trace from persisted domain state
+    and real audit trail telemetry. Exposes no hidden chain-of-thought or credentials.
+    """
+    sorted_events = sorted(events, key=lambda e: e.timestamp)
+
+    # 1. Commitment core metadata
+    com_data = {
+        "id": com.id,
+        "title": com.title,
+        "description": com.description,
+        "category": com.category.value if hasattr(com.category, "value") else str(com.category),
+        "promisor": com.promisor.model_dump(mode="json"),
+        "promisee": com.promisee.model_dump(mode="json"),
+        "obligation_direction": com.obligation_direction.value,
+        "due_date": com.due_date.isoformat() if com.due_date else None,
+        "promised_at": com.promised_at.isoformat() if com.promised_at else None,
+        "created_at": com.created_at.isoformat() if com.created_at else None,
+        "status": com.status.value,
+        "risk": com.risk.value,
+        "confidence": com.confidence,
+        "health": com.health.value,
+        "is_overdue": com.is_overdue,
+        "days_overdue": com.days_overdue,
+        "hours_overdue": com.hours_overdue,
+        "source_references": com.source_references,
+        "resolution_timestamp": com.resolution_timestamp.isoformat() if com.resolution_timestamp else None,
+    }
+
+    # 2. Corroborating Evidence
+    evidence_items = []
+    for ev in com.evidence_references:
+        evidence_items.append({
+            "id": ev.id,
+            "source_type": ev.source_type.value if hasattr(ev.source_type, "value") else str(ev.source_type),
+            "source_id": ev.source_id,
+            "title": ev.title,
+            "snippet": ev.snippet,
+            "confidence": ev.confidence,
+            "timestamp": ev.timestamp.isoformat() if ev.timestamp else None,
+            "url_or_path": ev.url_or_path,
+        })
+
+    # 3. Risk Assessment
+    risk_event = next(
+        (e for e in sorted_events if e.action_name in ("CALCULATE_RISK", "EVALUATE_RISK") or e.event_type in ("RISK", "EVALUATION")),
+        None,
+    )
+    risk_rationale = (
+        risk_event.rationale or risk_event.summary
+        if risk_event and (risk_event.rationale or risk_event.summary)
+        else (
+            f"Overdue by {com.days_overdue:.1f} days against deadline {com.due_date.isoformat()}."
+            if com.is_overdue and com.due_date
+            else f"Evaluated at {com.risk.value} risk with {int(com.confidence * 100)}% confidence."
+        )
+    )
+    risk_info = {
+        "risk_level": com.risk.value,
+        "confidence": com.confidence,
+        "is_overdue": com.is_overdue,
+        "days_overdue": com.days_overdue,
+        "hours_overdue": com.hours_overdue,
+        "overdue_duration": com.overdue_duration(),
+        "rationale": risk_rationale,
+        "blocking_impact": f"Blocks {len(com.dependencies)} downstream commitment(s)" if com.dependencies else "No downstream dependencies blocked",
+    }
+
+    # 4. Action Details
+    action_info = None
+    if com.next_action:
+        act = com.next_action
+        action_info = {
+            "id": act.id,
+            "action_type": act.action_type.value if hasattr(act.action_type, "value") else str(act.action_type),
+            "description": act.description,
+            "status": act.status.value if hasattr(act.status, "value") else str(act.status),
+            "risk": act.risk.value if hasattr(act.risk, "value") else str(act.risk),
+            "requires_human_approval": act.requires_human_approval,
+            "approval_reason": act.approval_reason,
+            "recipient": act.recipient,
+            "subject": act.subject,
+            "created_at": act.created_at.isoformat() if act.created_at else None,
+            "decided_at": act.decided_at.isoformat() if act.decided_at else None,
+            "executed_at": act.executed_at.isoformat() if act.executed_at else None,
+        }
+
+    # 5. Policy Decision
+    policy_event = next(
+        (e for e in sorted_events if e.action_name == "EVALUATE_POLICY" or e.event_type == "POLICY"),
+        None,
+    )
+    policy_rules = []
+    if policy_event and policy_event.metadata and "rules" in policy_event.metadata:
+        policy_rules = policy_event.metadata["rules"]
+    elif com.next_action and com.next_action.approval_reason:
+        policy_rules = [com.next_action.approval_reason]
+
+    requires_approval = (
+        policy_event.metadata.get("requires_human_approval")
+        if (policy_event and policy_event.metadata and "requires_human_approval" in policy_event.metadata)
+        else (com.next_action.requires_human_approval if com.next_action else False)
+    )
+
+    policy_info = {
+        "decision": "HUMAN_APPROVAL_REQUIRED" if requires_approval else "AUTONOMOUS_PERMITTED",
+        "rules_triggered": policy_rules,
+        "requires_human_approval": requires_approval,
+        "rationale": (
+            (policy_event.rationale if policy_event else None)
+            or (com.next_action.approval_reason if com.next_action else None)
+            or ("Mandatory approval required by policy" if requires_approval else "Autonomous execution permitted")
+        ),
+        "evaluated_at": policy_event.timestamp.isoformat() if policy_event else (com.next_action.created_at.isoformat() if com.next_action else None),
+        "authority": "PolicyAgent",
+    }
+
+    # 6. Human Approval
+    dispatch_event = next(
+        (e for e in sorted_events if e.action_name == "DISPATCH_ACTION" or e.event_type == "DISPATCH_ACTION"),
+        None,
+    )
+    approval_status = "NOT_STARTED"
+    reviewer = None
+    decided_at = None
+    approval_notes = None
+
+    if com.next_action:
+        decided_at = com.next_action.decided_at.isoformat() if com.next_action.decided_at else None
+        approval_notes = com.next_action.decision_notes
+
+    if com.status == CommitmentStatus.AWAITING_APPROVAL or (com.next_action and com.next_action.status == ActionStatus.AWAITING_APPROVAL):
+        approval_status = "PENDING"
+    elif (com.next_action and com.next_action.status == ActionStatus.APPROVED) or dispatch_event or com.status in (CommitmentStatus.EXECUTING, CommitmentStatus.VERIFYING, CommitmentStatus.RESOLVED):
+        approval_status = "APPROVED"
+        reviewer = "User"
+    elif com.status == CommitmentStatus.REJECTED or (com.next_action and com.next_action.status == ActionStatus.REJECTED):
+        approval_status = "REJECTED"
+        reviewer = "User"
+    elif com.next_action and not com.next_action.requires_human_approval:
+        approval_status = "NOT_REQUIRED"
+
+    approval_info = {
+        "status": approval_status,
+        "reviewer": reviewer,
+        "decision_timestamp": decided_at or (dispatch_event.timestamp.isoformat() if dispatch_event else None),
+        "notes": approval_notes or ("Authorized via Decision Surface" if approval_status == "APPROVED" else None),
+        "authority": "Human Operator" if reviewer else None,
+    }
+
+    # 7. Action Execution
+    execution_status = "NOT_STARTED"
+    execution_timestamp = None
+    execution_id = None
+    tool_executed = None
+    result_summary = "Awaiting authorization prior to dispatch."
+
+    if dispatch_event:
+        execution_status = "COMPLETED"
+        execution_timestamp = dispatch_event.timestamp.isoformat()
+        tool_executed = dispatch_event.tool or dispatch_event.tool_name
+        execution_id = dispatch_event.metadata.get("execution_id") if dispatch_event.metadata else None
+        result_summary = dispatch_event.summary
+    elif com.status in (CommitmentStatus.VERIFYING, CommitmentStatus.RESOLVED):
+        execution_status = "COMPLETED"
+        execution_timestamp = com.next_action.executed_at.isoformat() if com.next_action and com.next_action.executed_at else None
+        tool_executed = com.next_action.payload.get("tool") if com.next_action and com.next_action.payload else "send_followup"
+        result_summary = "Action dispatched through runtime execution engine into communication stream."
+    elif com.status == CommitmentStatus.EXECUTING:
+        execution_status = "IN_PROGRESS"
+        result_summary = "Runtime engine currently dispatching action."
+
+    execution_info = {
+        "status": execution_status,
+        "timestamp": execution_timestamp,
+        "tool_name": tool_executed,
+        "execution_id": execution_id,
+        "result_summary": result_summary,
+        "authority": "ExecutionEngine",
+    }
+
+    # 8. Post-Dispatch Verification
+    verification_event = next(
+        (e for e in reversed(sorted_events) if e.action_name == "VERIFY_RESOLUTION" or e.event_type == "VERIFICATION"),
+        None,
+    )
+    verification_status = "NOT_STARTED"
+    verified_at = None
+    gate_result = "NOT_RUN"
+    verif_rationale = "Verification not initiated."
+    evidence_ids = []
+    fresh_evidence = []
+
+    if com.verification_result:
+        vr = com.verification_result
+        gate_result = "PASSED" if vr.is_verified else ("FAILED" if com.status == CommitmentStatus.FAILED else "PENDING_PROOF")
+        verification_status = "VERIFIED" if vr.is_verified else ("FAILED" if com.status == CommitmentStatus.FAILED else "IN_PROGRESS")
+        verified_at = vr.verified_at.isoformat() if hasattr(vr, "verified_at") and vr.verified_at else (verification_event.timestamp.isoformat() if verification_event else None)
+        verif_rationale = vr.rationale
+        evidence_ids = vr.evidence_ids or []
+        for ev in com.evidence_references:
+            if ev.source_id in evidence_ids or "REPLY" in ev.source_id:
+                fresh_evidence.append({
+                    "id": ev.id,
+                    "source_id": ev.source_id,
+                    "source_type": ev.source_type.value if hasattr(ev.source_type, "value") else str(ev.source_type),
+                    "title": ev.title,
+                    "snippet": ev.snippet,
+                    "confidence": ev.confidence,
+                })
+    elif com.status == CommitmentStatus.VERIFYING:
+        verification_status = "IN_PROGRESS"
+        gate_result = "AWAITING_COUNTERPARTY_RESPONSE"
+        verif_rationale = "Action executed. Covenant VerificationGate actively monitoring for independent fulfillment proof."
+    elif com.status == CommitmentStatus.FAILED:
+        verification_status = "FAILED"
+        gate_result = "FAILED"
+        verif_rationale = verification_event.rationale if verification_event else "Counterparty verification failed."
+
+    verification_info = {
+        "status": verification_status,
+        "timestamp": verified_at,
+        "gate_result": gate_result,
+        "rationale": verif_rationale,
+        "evidence_ids": evidence_ids,
+        "fresh_evidence": fresh_evidence,
+        "authority": "VerificationGate (Authoritative Verifier)",
+    }
+
+    # 9. Final Outcome
+    outcome_summary = ""
+    if com.status == CommitmentStatus.RESOLVED:
+        outcome_summary = f"Commitment successfully fulfilled and independently verified at {com.resolution_timestamp.isoformat() if com.resolution_timestamp else 'N/A'}."
+    elif com.status == CommitmentStatus.FAILED:
+        outcome_summary = "Commitment failed independent verification by VerificationGate."
+    elif com.status == CommitmentStatus.VERIFYING:
+        outcome_summary = "Remedy action dispatched; waiting for external corroborating proof."
+    elif com.status == CommitmentStatus.AWAITING_APPROVAL:
+        outcome_summary = "Action formulated; awaiting human authorization on decision surface."
+    else:
+        outcome_summary = f"Commitment in {com.status.value} state."
+
+    final_outcome = {
+        "status": com.status.value,
+        "is_resolved": com.status == CommitmentStatus.RESOLVED,
+        "resolved_at": com.resolution_timestamp.isoformat() if com.resolution_timestamp else None,
+        "summary": outcome_summary,
+        "authority": "CovenantStateMachine",
+    }
+
+    # 10. Chronological Stages Stepper Contract (10 stages)
+    # Commitment detected -> Evidence gathered -> Risk calculated -> Action proposed -> Policy decision
+    # -> Human approval -> Action executed -> Verification started -> Verification evidence -> Final outcome
+    stages = [
+        {
+            "step": 1,
+            "name": "Commitment detected",
+            "status": "COMPLETED",
+            "actor": "CommitmentAgent",
+            "summary": f"Detected commitment: {com.title}",
+            "timestamp": com.created_at.isoformat() if com.created_at else None,
+        },
+        {
+            "step": 2,
+            "name": "Evidence gathered",
+            "status": "COMPLETED" if evidence_items else "PENDING",
+            "actor": "EvidenceAgent",
+            "summary": f"Corroborated {len(evidence_items)} evidence artifact(s) from workspace",
+            "timestamp": evidence_items[0]["timestamp"] if evidence_items and evidence_items[0]["timestamp"] else None,
+        },
+        {
+            "step": 3,
+            "name": "Risk calculated",
+            "status": "COMPLETED",
+            "actor": "RiskAgent",
+            "summary": f"Risk assessed as {com.risk.value} ({'Overdue' if com.is_overdue else 'Active'})",
+            "timestamp": risk_event.timestamp.isoformat() if risk_event else (com.created_at.isoformat() if com.created_at else None),
+        },
+        {
+            "step": 4,
+            "name": "Action proposed",
+            "status": "COMPLETED" if action_info else "PENDING",
+            "actor": "ResolutionAgent",
+            "summary": action_info["description"] if action_info else "No operational remedy proposed yet",
+            "timestamp": action_info["created_at"] if action_info else None,
+        },
+        {
+            "step": 5,
+            "name": "Policy decision",
+            "status": "COMPLETED" if policy_info["rules_triggered"] or action_info else "PENDING",
+            "actor": "PolicyAgent",
+            "summary": f"Policy: {policy_info['decision']} ({', '.join(policy_info['rules_triggered']) if policy_info['rules_triggered'] else 'Autonomous allowed'})",
+            "timestamp": policy_info["evaluated_at"],
+        },
+        {
+            "step": 6,
+            "name": "Human approval",
+            "status": (
+                "COMPLETED" if approval_info["status"] in ("APPROVED", "NOT_REQUIRED")
+                else ("FAILED" if approval_info["status"] == "REJECTED"
+                else ("ACTIVE" if approval_info["status"] == "PENDING" else "PENDING"))
+            ),
+            "actor": approval_info["authority"] or "Human Operator",
+            "summary": (
+                f"Approved by {approval_info['reviewer']}" if approval_info["status"] == "APPROVED"
+                else ("Approval rejected" if approval_info["status"] == "REJECTED"
+                else ("Pending review on Decision Surface" if approval_info["status"] == "PENDING" else "Not required"))
+            ),
+            "timestamp": approval_info["decision_timestamp"],
+        },
+        {
+            "step": 7,
+            "name": "Action executed",
+            "status": (
+                "COMPLETED" if execution_info["status"] == "COMPLETED"
+                else ("ACTIVE" if execution_info["status"] == "IN_PROGRESS" else "PENDING")
+            ),
+            "actor": "ExecutionEngine",
+            "summary": execution_info["result_summary"],
+            "timestamp": execution_info["timestamp"],
+        },
+        {
+            "step": 8,
+            "name": "Verification started",
+            "status": (
+                "COMPLETED" if com.status in (CommitmentStatus.VERIFYING, CommitmentStatus.RESOLVED, CommitmentStatus.FAILED)
+                else "PENDING"
+            ),
+            "actor": "VerificationAgent",
+            "summary": "Independent VerificationGate loop initiated",
+            "timestamp": execution_info["timestamp"],
+        },
+        {
+            "step": 9,
+            "name": "Verification evidence",
+            "status": (
+                "COMPLETED" if verification_info["fresh_evidence"] or (com.verification_result and com.verification_result.is_verified)
+                else ("ACTIVE" if com.status == CommitmentStatus.VERIFYING else "PENDING")
+            ),
+            "actor": "VerificationGate",
+            "summary": (
+                f"Obtained fresh corroborating evidence: {len(verification_info['fresh_evidence'])} item(s)"
+                if verification_info["fresh_evidence"]
+                else "Awaiting fresh counterparty evidence"
+            ),
+            "timestamp": verification_info["timestamp"],
+        },
+        {
+            "step": 10,
+            "name": "Final outcome",
+            "status": (
+                "COMPLETED" if com.status == CommitmentStatus.RESOLVED
+                else ("FAILED" if com.status == CommitmentStatus.FAILED
+                else ("ACTIVE" if com.status == CommitmentStatus.VERIFYING else "PENDING"))
+            ),
+            "actor": "CommitmentStateMachine",
+            "summary": final_outcome["summary"],
+            "timestamp": final_outcome["resolved_at"],
+        },
+    ]
+
+    # 11. Timeline: Build strictly from persisted audit records
+    timeline_items = []
+    for evt in sorted_events:
+        timeline_items.append({
+            "id": evt.id or evt.event_id,
+            "timestamp": evt.timestamp.isoformat(),
+            "event_type": evt.event_type or evt.action_name,
+            "actor": evt.agent or evt.agent_name,
+            "summary": evt.summary,
+            "evidence_reference": evt.metadata.get("evidence_ids") or (f"[{evt.tool}]" if evt.tool else None),
+            "result_status": evt.result_status,
+            "rationale": evt.rationale,
+            "state_after": evt.state_after.value if evt.state_after else (evt.new_state.value if evt.new_state else None),
+        })
+
+    # Merge in action_history if any distinct transition is not present in events
+    for h in com.action_history:
+        h_ts = h.timestamp.isoformat()
+        if not any(t["summary"] == h.summary for t in timeline_items):
+            timeline_items.append({
+                "id": h.id,
+                "timestamp": h_ts,
+                "event_type": h.action_type.value if h.action_type else "STATE_TRANSITION",
+                "actor": h.agent_name,
+                "summary": h.summary,
+                "evidence_reference": None,
+                "result_status": "SUCCESS",
+                "rationale": h.details.get("reason") if h.details else None,
+                "state_after": h.state_after.value if h.state_after else None,
+            })
+
+    timeline_items.sort(key=lambda x: x["timestamp"])
+
+    return {
+        "commitment_id": com.id,
+        "title": com.title,
+        "current_state": com.status.value,
+        "current_risk": com.risk.value,
+        "health": com.health.value,
+        "commitment": com_data,
+        "stages": stages,
+        "evidence": evidence_items,
+        "risk": risk_info,
+        "action": action_info,
+        "policy_decision": policy_info,
+        "approval": approval_info,
+        "execution": execution_info,
+        "verification": verification_info,
+        "final_outcome": final_outcome,
+        "timeline": timeline_items,
+        "timeline_source": "persisted_sqlite_audit_events" if timeline_items else "none_recorded",
+    }
+
+
+@router.get("/commitments/{commitment_id}/trace")
+async def get_commitment_decision_trace(commitment_id: str):
+    """
+    Retrieve the full, auditable Decision Trace for a commitment.
+    Composes real persisted domain state and telemetry audit events.
+    Read-only, non-mutating, zero model private reasoning exposed.
+    """
+    com = await repo.get_by_id(commitment_id)
+    if not com:
+        raise HTTPException(status_code=404, detail=f"Commitment '{commitment_id}' not found.")
+
+    events = await repo.list_events(commitment_id=commitment_id, limit=200)
+    return build_commitment_decision_trace(com, events)
+
+
 @router.get("/map")
 async def get_commitment_map():
     """
