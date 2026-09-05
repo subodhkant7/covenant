@@ -35,7 +35,7 @@ repo = SQLiteCommitmentRepository()
 runtime_env: CovenantRuntimeEnvironment = CovenantRuntimeBootstrap.assemble()
 tools = initialize_tools()
 llm = DeterministicFallbackProvider()
-supervisor = SupervisorAgent(llm=llm, tools=tools, commitment_repo=repo, event_repo=repo)
+supervisor = SupervisorAgent(llm=llm, tools=tools, commitment_repo=repo, event_repo=repo, runtime_env=runtime_env)
 
 
 class DecisionActionRequest(BaseModel):
@@ -45,6 +45,10 @@ class DecisionActionRequest(BaseModel):
 
 class VerifyRequest(BaseModel):
     simulated_params: Optional[Dict[str, Any]] = None
+
+
+class SimulateReplyRequest(BaseModel):
+    fulfilled: bool = True
 
 
 @router.get("/health")
@@ -492,12 +496,13 @@ async def approve_decision(action_id: str, req: DecisionActionRequest):
 
 
 @router.post("/simulate/reply/{commitment_id}")
-async def simulate_external_reply(commitment_id: str):
+async def simulate_external_reply(commitment_id: str, req: Optional[SimulateReplyRequest] = None):
     """
     'World Changes' Demo Mechanism:
     Simulates the external counterparty observing the follow-up and sending a reply.
     """
-    reply = workspace_store.simulate_client_reply(commitment_id)
+    fulfilled = req.fulfilled if req is not None else True
+    reply = workspace_store.simulate_client_reply(commitment_id, fulfilled=fulfilled)
     if not reply:
         raise HTTPException(status_code=404, detail="No simulation rule found for this commitment.")
 
@@ -509,7 +514,7 @@ async def simulate_external_reply(commitment_id: str):
             summary=f"Received incoming reply: '{reply['subject']}' from {reply['from']}",
             commitment_id=commitment_id,
             result_status="SUCCESS",
-            rationale="External environment updated with counterparty response.",
+            rationale=f"External environment updated with counterparty response (fulfilled={fulfilled}).",
         )
     )
 
@@ -519,9 +524,10 @@ async def simulate_external_reply(commitment_id: str):
 
     return {
         "success": True,
-        "message": "External client response simulated and verified.",
+        "message": f"External client response simulated (fulfilled={fulfilled}) and evaluated through VerificationGate.",
         "incoming_email": reply,
         "commitment": updated.model_dump(mode="json") if updated else None,
+        "verification": res.data,
     }
 
 
@@ -560,18 +566,20 @@ async def reject_decision(action_id: str, req: DecisionActionRequest):
 
 
 @router.post("/commitments/{commitment_id}/verify")
-async def trigger_verification(commitment_id: str, req: VerifyRequest):
+async def trigger_verification(commitment_id: str, req: Optional[VerifyRequest] = None):
     """Trigger the VerificationAgent on a commitment."""
     com = await repo.get_by_id(commitment_id)
     if not com:
         raise HTTPException(status_code=404, detail="Commitment not found.")
 
-    res = await supervisor.verify_commitment(commitment_id, req.simulated_params or {"simulated_signed_approval": True, "simulated_repair_complete": True, "simulated_delivery_complete": True})
+    params = req.simulated_params if req else None
+    res = await supervisor.verify_commitment(commitment_id, params)
     updated_com = await repo.get_by_id(commitment_id)
     return {
         "success": res.success,
         "summary": res.summary,
         "commitment": updated_com.model_dump(mode="json") if updated_com else None,
+        "verification": res.data,
     }
 
 

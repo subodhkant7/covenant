@@ -119,9 +119,10 @@ def _guard_executing(commitment: Commitment) -> None:
 
 def _guard_resolved(commitment: Commitment) -> None:
     """Ensure verification condition is checked before RESOLVED."""
-    if commitment.verification_result and not commitment.verification_result.is_verified:
+    if not commitment.verification_result or not commitment.verification_result.is_verified:
+        rationale = commitment.verification_result.rationale if commitment.verification_result else "No verification result recorded."
         raise GuardConditionFailedError(
-            f"Cannot resolve commitment: verification failed ({commitment.verification_result.rationale})."
+            f"Cannot resolve commitment without verified outcome: {rationale}"
         )
 
 

@@ -1,15 +1,42 @@
 """Verification Agent: Verifies completion using evidence before resolving commitments."""
 
+from typing import Any, Dict, List, Optional
+
+from agent_runtime.core.contracts.context import Task
+from agent_runtime.core.contracts.verification import (
+    Evidence as RuntimeEvidence,
+    VerificationResult as RuntimeVerificationResult,
+)
+from agent_runtime.core.interfaces.verification import IVerifier
+from agent_runtime.core.telemetry.sink import InMemoryEventSink
+from agent_runtime.core.verification.gate import VerificationGate
 from covenant.agents.base import AgentContext, AgentResult, BaseAgent
-from covenant.domain.enums import CommitmentStatus
-from covenant.domain.models import VerificationResult, utc_now
+from covenant.domain.enums import CommitmentStatus, EvidenceSourceType
+from covenant.domain.models import EvidenceReference, VerificationResult, utc_now
+from covenant.llm.provider import AbstractModelProvider
+from covenant.persistence.repository import AbstractCommitmentRepository, AbstractEventRepository
 from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
+from covenant.tools.base import ToolRegistry
+from covenant_runtime_bridge.verification.verification_adapter import CovenantVerificationAdapter
 
 
 class VerificationAgent(BaseAgent):
     name = "VerificationAgent"
     description = "Independently checks whether an action or obligation has been fulfilled before closing."
+
+    def __init__(
+        self,
+        llm: Optional[AbstractModelProvider] = None,
+        tools: Optional[ToolRegistry] = None,
+        commitment_repo: Optional[AbstractCommitmentRepository] = None,
+        event_repo: Optional[AbstractEventRepository] = None,
+        verification_gate: Optional[VerificationGate] = None,
+        verifier: Optional[IVerifier] = None,
+    ):
+        super().__init__(llm=llm, tools=tools, commitment_repo=commitment_repo, event_repo=event_repo)
+        self.verification_gate = verification_gate
+        self.verifier = verifier
 
     async def run(self, context: AgentContext) -> AgentResult:
         cid = context.target_commitment_id
@@ -32,28 +59,48 @@ class VerificationAgent(BaseAgent):
                 reason="Initiated verification pass.",
             )
 
-        # Execute real independent verification tool against workspace environment
-        verif_res = await self.tools.get("verify_commitment").execute(commitment_id=commitment.id)
-        if verif_res.success:
-            data = verif_res.data
-            is_verified = data.get("is_verified", False)
-            rationale = data.get("rationale", "Verification evaluated.")
-            evidence_ids = data.get("evidence_ids", [])
-        else:
-            is_verified = False
-            rationale = verif_res.error or "Verification check failed."
-            evidence_ids = []
+        # Support explicit simulation override if passed in context parameters
+        if context.parameters.get("simulated_signed_approval"):
+            workspace_store.simulate_client_reply(commitment.id, fulfilled=True)
+        elif context.parameters.get("simulated_rejection"):
+            workspace_store.simulate_client_reply(commitment.id, fulfilled=False)
 
-        # Also support explicit simulation override if passed in context parameters
-        if "simulated_signed_approval" in context.parameters:
-            if context.parameters["simulated_signed_approval"]:
-                # Ensure world reply is simulated if requested
-                workspace_store.simulate_client_reply(commitment.id)
-                recheck = await self.tools.get("verify_commitment").execute(commitment_id=commitment.id)
-                if recheck.success:
-                    is_verified = recheck.data.get("is_verified", True)
-                    rationale = recheck.data.get("rationale", rationale)
-                    evidence_ids = recheck.data.get("evidence_ids", evidence_ids)
+        # Authoritative runtime VerificationGate and verifier
+        gate = self.verification_gate or VerificationGate(event_sink=InMemoryEventSink())
+        verifier = self.verifier or CovenantVerificationAdapter(verify_tool=self.tools.get("verify_commitment"))
+
+        task = Task(
+            id=f"tsk_verif_{commitment.id}",
+            organization_id="org_covenant_northstar",
+            intent=f"Verify independent outcome for commitment: {commitment.title}",
+            required_role="covenant.verifier",
+        )
+
+        # Evaluates real-world outcome proof before task closure.
+        # Authority over task completion is held exclusively by VerificationGate.
+        gate_result: RuntimeVerificationResult = await gate.verify_task(
+            task=task,
+            verifier=verifier,
+            expected_outcome=f"Counterparty fulfillment for commitment '{commitment.title}' corroborated by independent proof",
+            verification_criteria={"commitment_id": commitment.id},
+        )
+
+        is_verified = gate_result.verified
+        rationale = gate_result.rationale
+        evidence_ids = [ev.source_id for ev in gate_result.evidence]
+
+        # Attach fresh corroborating evidence references to commitment
+        for ev in gate_result.evidence:
+            if not any(e.source_id == ev.source_id for e in commitment.evidence_references):
+                commitment.evidence_references.append(
+                    EvidenceReference(
+                        source_type=EvidenceSourceType.EMAIL if "EML" in ev.source_id else EvidenceSourceType.PROJECT,
+                        source_id=ev.source_id,
+                        title=f"Verification Proof: {ev.summary}",
+                        snippet=rationale,
+                        confidence=0.98 if is_verified else 0.4,
+                    )
+                )
 
         vres = VerificationResult(
             commitment_id=commitment.id,
@@ -73,8 +120,18 @@ class VerificationAgent(BaseAgent):
                     commitment=commitment,
                     target_state=CommitmentStatus.RESOLVED,
                     agent_name=self.name,
-                    reason=f"Business outcome independently verified: {rationale}",
+                    reason=f"Business outcome independently verified by VerificationGate: {rationale}",
                 )
+        else:
+            # If explicit rejection occurred, transition to FAILED if permitted, otherwise remain in VERIFYING
+            if context.parameters.get("simulated_rejection") or context.parameters.get("mark_failed"):
+                if CommitmentStateMachine.can_transition(commitment.status, CommitmentStatus.FAILED):
+                    CommitmentStateMachine.transition(
+                        commitment=commitment,
+                        target_state=CommitmentStatus.FAILED,
+                        agent_name=self.name,
+                        reason=f"Business outcome verification failed by VerificationGate: {rationale}",
+                    )
 
         await self.commitment_repo.save(commitment)
 
@@ -85,19 +142,21 @@ class VerificationAgent(BaseAgent):
             tool_name="verify_commitment",
             new_state=commitment.status,
             rationale=rationale,
+            metadata={"gate_verified": is_verified, "evidence_ids": evidence_ids},
         )
         events.append(evt)
 
         return AgentResult(
             agent_name=self.name,
             success=True,
-            summary=f"Verification completed. Outcome Verified: {is_verified}",
+            summary=f"Verification completed via VerificationGate. Outcome Verified: {is_verified}",
             data={
                 "action_succeeded": True,
                 "business_outcome_verified": is_verified,
                 "is_verified": is_verified,
                 "rationale": rationale,
                 "status": commitment.status.value,
+                "evidence_ids": evidence_ids,
             },
             events=events,
         )

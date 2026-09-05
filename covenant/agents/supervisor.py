@@ -24,13 +24,24 @@ class SupervisorAgent(BaseAgent):
         tools: Optional[ToolRegistry] = None,
         commitment_repo: Optional[AbstractCommitmentRepository] = None,
         event_repo: Optional[AbstractEventRepository] = None,
+        runtime_env: Optional[Any] = None,
+        verification_gate: Optional[Any] = None,
     ):
         super().__init__(llm=llm, tools=tools, commitment_repo=commitment_repo, event_repo=event_repo)
         self.commitment_agent = CommitmentAgent(llm, tools, commitment_repo, event_repo)
         self.evidence_agent = EvidenceAgent(llm, tools, commitment_repo, event_repo)
         self.resolution_agent = ResolutionAgent(llm, tools, commitment_repo, event_repo)
         self.policy_agent = PolicyAgent(llm, tools, commitment_repo, event_repo)
-        self.verification_agent = VerificationAgent(llm, tools, commitment_repo, event_repo)
+        gate = verification_gate or (runtime_env.verification_gate if runtime_env else None)
+        verifier = runtime_env.verifier if runtime_env else None
+        self.verification_agent = VerificationAgent(
+            llm=llm,
+            tools=tools,
+            commitment_repo=commitment_repo,
+            event_repo=event_repo,
+            verification_gate=gate,
+            verifier=verifier,
+        )
 
     async def run(self, context: AgentContext) -> AgentResult:
         """Run full workspace scan and autonomous agent pipeline."""
@@ -67,6 +78,11 @@ class SupervisorAgent(BaseAgent):
                 # Policy evaluation
                 pol_res = await self.policy_agent.run(sub_ctx)
                 events.extend(pol_res.events)
+
+            elif com.status == CommitmentStatus.VERIFYING:
+                # Independent verification pass on commitments awaiting outcome corroboration
+                verif_res = await self.verification_agent.run(sub_ctx)
+                events.extend(verif_res.events)
 
         await self.emit_event(
             action_name="SUPERVISOR_CYCLE_COMPLETE",

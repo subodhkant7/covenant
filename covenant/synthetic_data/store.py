@@ -127,61 +127,104 @@ class SyntheticWorkspaceStore:
         self.escalations.append(esc)
         return esc
 
-    def simulate_client_reply(self, commitment_id: str) -> Optional[Dict[str, Any]]:
+    def simulate_client_reply(self, commitment_id: str, fulfilled: bool = True) -> Optional[Dict[str, Any]]:
         """
         'World Changes' Demo Mechanism:
         Simulates an external party observing the follow-up and sending a reply.
         """
         if "atlas" in commitment_id.lower():
             reply_id = f"EML-REPLY-{len(self.emails) + 1}"
-            reply = {
-                "id": reply_id,
-                "thread_id": "TH-ATLAS-APPROVAL",
-                "date": datetime.now(timezone.utc).isoformat(),
-                "from": "Sarah Jenkins <sjenkins@meridianglobal.com>",
-                "to": ["Alex North <alex@northstarstudio.com>"],
-                "subject": "Re: Friendly Follow-up: Project Atlas Phase 2 Formal Approval",
-                "body": (
-                    "Hi Alex,\n\n"
-                    "Apologies for the brief delay—our steering committee completed the review this morning. "
-                    "We formally APPROVE the Phase 2 High-Fidelity UI System deliverables per MSA Section 4.2. "
-                    "Please proceed immediately with Phase 3 frontend implementation.\n\n"
-                    "Best regards,\nSarah Jenkins\nVP of Digital, Meridian Global"
-                ),
-                "attachments": ["Signed_Atlas_Phase2_Signoff.pdf"],
-            }
-            self.emails.append(reply)
+            if fulfilled:
+                reply = {
+                    "id": reply_id,
+                    "thread_id": "TH-ATLAS-APPROVAL",
+                    "date": datetime.now(timezone.utc).isoformat(),
+                    "from": "Sarah Jenkins <sjenkins@meridianglobal.com>",
+                    "to": ["Alex North <alex@northstarstudio.com>"],
+                    "subject": "Re: Friendly Follow-up: Project Atlas Phase 2 Formal Approval",
+                    "body": (
+                        "Hi Alex,\n\n"
+                        "Apologies for the brief delay—our steering committee completed the review this morning. "
+                        "We formally APPROVE the Phase 2 High-Fidelity UI System deliverables per MSA Section 4.2. "
+                        "Please proceed immediately with Phase 3 frontend implementation.\n\n"
+                        "Best regards,\nSarah Jenkins\nVP of Digital, Meridian Global"
+                    ),
+                    "attachments": ["Signed_Atlas_Phase2_Signoff.pdf"],
+                }
+                self.emails.append(reply)
 
-            # Update project milestone status
-            atlas_prj = self.get_project_by_id("PRJ-ATLAS")
-            if atlas_prj:
-                for m in atlas_prj.get("milestones", []):
-                    if m["id"] == "M2":
-                        m["status"] = "APPROVED_BY_CLIENT"
-                        m["approved_at"] = datetime.now(timezone.utc).isoformat()
-                    if m["id"] == "M3":
-                        m["status"] = "UNBLOCKED_IN_PROGRESS"
-            return reply
+                # Update project milestone status
+                atlas_prj = self.get_project_by_id("PRJ-ATLAS")
+                if atlas_prj:
+                    for m in atlas_prj.get("milestones", []):
+                        if m["id"] == "M2":
+                            m["status"] = "APPROVED_BY_CLIENT"
+                            m["approved_at"] = datetime.now(timezone.utc).isoformat()
+                        if m["id"] == "M3":
+                            m["status"] = "UNBLOCKED_IN_PROGRESS"
+                return reply
+            else:
+                reply = {
+                    "id": reply_id,
+                    "thread_id": "TH-ATLAS-APPROVAL",
+                    "date": datetime.now(timezone.utc).isoformat(),
+                    "from": "Sarah Jenkins <sjenkins@meridianglobal.com>",
+                    "to": ["Alex North <alex@northstarstudio.com>"],
+                    "subject": "Re: Friendly Follow-up: Project Atlas Phase 2 Formal Approval",
+                    "body": (
+                        "Hi Alex,\n\n"
+                        "Our steering committee completed the review but CANNOT approve Phase 2 deliverables at this time. "
+                        "Critical visual fidelity issues remain unresolved per MSA Section 4.2.\n\n"
+                        "Best regards,\nSarah Jenkins\nVP of Digital, Meridian Global"
+                    ),
+                    "attachments": [],
+                }
+                self.emails.append(reply)
+
+                atlas_prj = self.get_project_by_id("PRJ-ATLAS")
+                if atlas_prj:
+                    for m in atlas_prj.get("milestones", []):
+                        if m["id"] == "M2":
+                            m["status"] = "REJECTED_BY_CLIENT"
+                return reply
 
         elif "apex" in commitment_id.lower():
             reply_id = f"EML-REPLY-{len(self.emails) + 1}"
-            reply = {
-                "id": reply_id,
-                "thread_id": "TH-APEX-REPAIR",
-                "date": datetime.now(timezone.utc).isoformat(),
-                "from": "Marcus Vance <m.vance@apexindustrialrepairs.com>",
-                "to": ["Alex North <alex@northstarstudio.com>"],
-                "subject": "Re: URGENT: Laser Cutter Calibration Incomplete — Repair Request SR-8841",
-                "body": (
-                    "Alex,\n\n"
-                    "Understood. Dave is en route now with the replacement sensor module. Calibration will be completed "
-                    "and signed off by 2 PM today.\n\n"
-                    "Marcus Vance"
-                ),
-                "attachments": [],
-            }
-            self.emails.append(reply)
-            return reply
+            if fulfilled:
+                reply = {
+                    "id": reply_id,
+                    "thread_id": "TH-APEX-REPAIR",
+                    "date": datetime.now(timezone.utc).isoformat(),
+                    "from": "Marcus Vance <m.vance@apexindustrialrepairs.com>",
+                    "to": ["Alex North <alex@northstarstudio.com>"],
+                    "subject": "Re: URGENT: Laser Cutter Calibration Incomplete — Repair Request SR-8841",
+                    "body": (
+                        "Alex,\n\n"
+                        "Understood. Dave is en route now with the replacement sensor module. Calibration will be completed "
+                        "and signed off by 2 PM today.\n\n"
+                        "Marcus Vance"
+                    ),
+                    "attachments": [],
+                }
+                self.emails.append(reply)
+                return reply
+            else:
+                reply = {
+                    "id": reply_id,
+                    "thread_id": "TH-APEX-REPAIR",
+                    "date": datetime.now(timezone.utc).isoformat(),
+                    "from": "Marcus Vance <m.vance@apexindustrialrepairs.com>",
+                    "to": ["Alex North <alex@northstarstudio.com>"],
+                    "subject": "Re: URGENT: Laser Cutter Calibration Incomplete — Repair Request SR-8841",
+                    "body": (
+                        "Alex,\n\n"
+                        "Unfortunately we do not have parts in stock for SR-8841 and cannot perform the repair today.\n\n"
+                        "Marcus Vance"
+                    ),
+                    "attachments": [],
+                }
+                self.emails.append(reply)
+                return reply
 
         return None
 

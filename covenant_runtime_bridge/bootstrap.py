@@ -13,6 +13,7 @@ from agent_runtime.core.interfaces.telemetry import IEventSink
 from agent_runtime.core.persistence.interfaces import IApprovalRepository, IToolExecutionRepository
 from agent_runtime.core.policy.engine import DefaultPolicyEngine
 from agent_runtime.core.telemetry.sink import InMemoryEventSink
+from agent_runtime.core.verification.gate import VerificationGate
 from covenant_runtime_bridge.agents.discovery_agent import AdaptedCommitmentAgent
 from covenant_runtime_bridge.agents.investigator_agent import AdaptedEvidenceAgent
 from covenant_runtime_bridge.agents.resolver_agent import AdaptedResolutionAgent
@@ -36,6 +37,7 @@ class CovenantRuntimeEnvironment:
     approval_service: Optional[RuntimeApprovalService] = None
     tool_repo: Optional[IToolExecutionRepository] = None
     approval_repo: Optional[IApprovalRepository] = None
+    verification_gate: Optional[VerificationGate] = None
 
 
 class CovenantRuntimeBootstrap:
@@ -126,6 +128,8 @@ class CovenantRuntimeBootstrap:
             event_sink=sink,
         )
 
+        verification_gate = VerificationGate(event_sink=sink)
+
         return CovenantRuntimeEnvironment(
             organization_id=org_id,
             tools=tools,
@@ -140,4 +144,5 @@ class CovenantRuntimeBootstrap:
             approval_service=approval_service,
             tool_repo=tool_execution_repo,
             approval_repo=app_repo,
+            verification_gate=verification_gate,
         )

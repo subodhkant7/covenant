@@ -27,7 +27,12 @@ class CovenantVerificationAdapter(IVerifier):
         cid = (
             criteria.get("commitment_id")
             or (extract_commitment_id_from_scope(scope) if scope else None)
-            or request.task_id.replace("tsk_cov_res_", "").replace("tsk_cov_inv_", "")
+            or (
+                request.task_id.replace("tsk_cov_res_", "")
+                .replace("tsk_cov_inv_", "")
+                .replace("tsk_cov_verif_", "")
+                .replace("tsk_verif_", "")
+            )
         )
 
         # Execute Covenant's independent verification check
