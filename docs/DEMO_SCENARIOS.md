@@ -27,7 +27,7 @@ These three coherent scenarios demonstrate real agentic behavior: discovery, mul
    - Promisor: Sarah Jenkins (Meridian Global Corp)
    - Status: Overdue by 3 days
    - Evidence Checklist: Milestone submitted Sep 3, contract clause 4.2 identified, zero approval emails received.
-   - Risk: Medium (Downstream development blocked) | Confidence: 96%
+   - Risk: HIGH (Downstream Phase 3 frontend blocked) | Confidence: 96%
    - Proposed Draft Message: Pre-composed with dates and references.
 3. **Human Decision**: The user clicks **[Approve & Dispatch]** (or modifies the draft).
 4. **Agent Execution**:
