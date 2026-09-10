@@ -316,6 +316,51 @@ class EvidenceAgent(BaseAgent):
                     rationale = "Documentary evidence captured; awaiting secondary corroboration."
                     confidence = 0.85
 
+        # ---------------------------------------------------------------
+        # Cross-source contradiction detection (applies to all scenarios)
+        # ---------------------------------------------------------------
+        # After scenario-specific synthesis, scan gathered evidence snippets
+        # for conflicting approval/rejection signals across different sources.
+        if gathered_evidence and len(gathered_evidence) >= 2:
+            _approval_terms = ["approved", "verbally approved", "sign off", "formally approve", "sign-off received"]
+            _rejection_terms = ["unable to approve", "reject", "not approved", "declined", "cannot approve", "not met", "unresolved"]
+
+            approving_sources = [
+                e for e in gathered_evidence
+                if any(t in (e.snippet or "").lower() for t in _approval_terms)
+            ]
+            rejecting_sources = [
+                e for e in gathered_evidence
+                if any(t in (e.snippet or "").lower() for t in _rejection_terms)
+            ]
+
+            if approving_sources and rejecting_sources:
+                # Only add if not already detected by scenario-specific logic
+                existing_conflict_sources = {
+                    (c.source_a, c.source_b) for c in conflicts
+                }
+                pair = (approving_sources[0].source_id, rejecting_sources[0].source_id)
+                reverse_pair = (rejecting_sources[0].source_id, approving_sources[0].source_id)
+                if pair not in existing_conflict_sources and reverse_pair not in existing_conflict_sources:
+                    conflicts.append(
+                        EvidenceConflict(
+                            source_a=approving_sources[0].source_id,
+                            source_b=rejecting_sources[0].source_id,
+                            description=(
+                                f"Cross-source authority conflict: {approving_sources[0].source_id} indicates approval "
+                                f"while {rejecting_sources[0].source_id} indicates rejection or non-approval."
+                            ),
+                            conflict_type="AUTHORITY_CONTRADICTION",
+                            severity=RiskLevel.HIGH,
+                        )
+                    )
+                    confidence = min(confidence, 0.55)
+                    finding = f"Contradictory authority signals detected across evidence sources."
+                    rationale = (
+                        f"Source {approving_sources[0].source_id} signals approval while "
+                        f"{rejecting_sources[0].source_id} signals rejection; manual resolution required."
+                    )
+
         rec_risk = (
             RiskLevel.HIGH
             if (is_blocking and (conflicts or evidence_gaps or commitment.status in [CommitmentStatus.OVERDUE, CommitmentStatus.DUE]))
