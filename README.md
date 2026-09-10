@@ -32,6 +32,13 @@ VerificationGate
 RESOLVED
 ```
 
+> **Execution is an event. Fulfillment is an outcome.**  
+> Covenant frames automation around **obligation truth**, not task completion.
+
+```text
+Discovery ──► Evidence Synthesis ──► Risk Assessment ──► Remediation Proposal ──► Policy Boundary ──► Human Approval ──► Controlled Execution (T_exec) ──► VERIFYING ──► Fresh Independent Proof (T_proof > T_exec) ──► VerificationGate ──► RESOLVED
+```
+
 When an agent sends an email, calls an API, or updates a ticket, that is **action execution**, not **obligation fulfillment**. Closing a promise prematurely leads to missed milestones, broken vendor SLAs, and compliance blindspots. 
 
 Covenant solves this by separating **agent reasoning**, **deterministic governance**, and **independent verification**.
@@ -110,6 +117,12 @@ Covenant builds natively on the AWS Strands Agents SDK (`strands-agents`):
   - **Deterministic Provider (`COVENANT_MODEL_PROVIDER=deterministic`) [Default]**: Fully offline, reproducible reasoning provider implementing the Strands `Model` streaming interface for zero-dependency local execution, CI, and evaluation.
   - **Local Ollama Provider (`COVENANT_MODEL_PROVIDER=ollama`)**: Connects to local Ollama servers (`http://localhost:11434`, `llama3:latest`).
   - **Amazon Bedrock Provider (`COVENANT_MODEL_PROVIDER=bedrock`)**: Direct integration with Strands `BedrockModel` (`strands.models.bedrock.BedrockModel`) supporting Claude, Nova, and other Bedrock foundation models via standard AWS credential chains.
+
+### Agentic Reasoning vs. Deterministic Authority
+
+Covenant strictly separates probabilistic intelligence from deterministic authority:
+- **Where Strands Agents Reason**: Semantic extraction of commitments from unstructured text, multi-source evidence interpretation, gap and contradiction deduction, and contextual drafting of remedial notices.
+- **Where Governed Runtime Enforces Authority**: Deterministic state machine transitions, immutable policy rules (e.g. `RULE-EXT-COMM` requiring human approval for external messages), cryptographic idempotency, and the VerificationGate ($T_{\text{proof}} > T_{\text{exec}}$) that prevents self-declared fulfillment. Model hallucination cannot bypass these non-negotiable boundaries.
 
 ---
 

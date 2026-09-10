@@ -17,9 +17,15 @@
 ### [0:00 – 0:45] Act 1: The Problem — Execution vs. Fulfillment
 - **Visual**: Slide / Landing view of Covenant Commitment Map. 
 - **Spoken**:
-  "Every business runs on promises made in emails, contracts, and Slack threads. But current AI agents suffer from a fundamental flaw: they confuse *taking an action* with *fulfilling an obligation*. 
-  When an agent sends a follow-up email or calls an API, it marks the task complete. But did the client actually approve the contract? Did the supplier deliver the goods? 
-  This is **Covenant**—autonomous commitment intelligence powered by AWS Strands Agents and a strictly governed runtime. Covenant doesn't just dispatch tasks; it independently verifies real-world outcomes before closing commitments."
+  "People make commitments.
+  Those commitments become buried across emails, contracts, project systems, and approvals.
+  Most automation stops when the action succeeds.
+  Covenant does not.
+  It monitors the commitment, collects evidence, proposes remediation, gets approval when required, executes the action, and then asks:
+  'Did the commitment actually happen?'
+  Only independent fresh evidence can resolve it.
+
+  This is **Covenant**—autonomous commitment intelligence powered by AWS Strands Agents and a strictly governed runtime. Execution is an event; fulfillment is an outcome."
 
 ---
 

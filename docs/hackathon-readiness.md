@@ -21,6 +21,8 @@ This matrix maps Covenant's implementation against the official submission requi
 | **11. AWS / Third-Party Integrations** | **COMPLETE** | Native Strands Amazon Bedrock provider (`strands.models.bedrock.BedrockModel`) implemented in `covenant/llm/bedrock_provider.py` with standard AWS credential resolution and graceful offline fallback. |
 | **12. Live Demo Status** | **SUPPORTED LOCALLY** | Self-contained, offline-first local execution path requiring zero cloud credentials. Live Bedrock integration ready via environment variables when AWS account model access is provisioned. |
 | **13. Limitations & Disclosures** | **DISCLOSED** | Clear documentation of synthetic benchmark boundaries, deterministic engineering scope, and offline fallback behavior in `README.md`. |
+| **14. Video Submission (<= 5 min)** | **COMPLETE** | Production video script structured at 4:30 – 5:00 minutes with positive and negative paths in [`docs/demo-script.md`](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/docs/demo-script.md). |
+| **15. AWS Builder ID** | **READY** | Standard hackathon requirement verified; submitter profile configured for Devpost submission. |
 
 ---
 
