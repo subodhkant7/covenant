@@ -187,3 +187,34 @@ python3 -m pytest tests/ -v
 - `test_synthetic_data.py`: Northstar Studio dataset queries
 - `test_tools.py`: Tool registry and parameter schemas
 - `test_lifecycle_e2e.py`: End-to-end lifecycle from discovery to verification and resolution
+- `test_agentic_benchmark.py`: Reproducible Agentic Evaluation & Safety Benchmark (25 scenarios)
+
+---
+
+## Agentic Evaluation & Safety Benchmark
+
+Covenant includes a reproducible, deterministic **Agentic Evaluation & Safety Benchmark** (`tests/evaluation/`) designed to objectively measure whether the agent system adheres to its governance invariants and evidence reasoning contracts:
+
+- **Purpose**: Objectively measure whether Covenant's agent system extracts obligations accurately, grounds conclusions strictly in evidence, distinguishes facts from inference, respects policy boundaries, requires human authorization, and refuses to mark obligations fulfilled without independent post-execution proof. It is an evaluation suite, not a runtime subsystem, and is designed to expose failures.
+- **Scenario Categories** (25 benchmark cases):
+  1. *Commitment Understanding*: Clear commitments, ambiguous statements, questions mistaken for obligations, polite suggestions, already-completed work, and directional/reciprocal obligations.
+  2. *Evidence Reasoning*: Multi-source corroboration, evidence gaps, stale documentary evidence, duplicate records, incomplete logs, and genuine cross-source contradictions.
+  3. *Risk Assessment*: Low-impact overdue tasks, overdue obligations with downstream dependencies blocked, high-risk external communications, and financial disbursement liabilities.
+  4. *Action & Policy Enforcement*: Safe autonomous operations, outbound counterparty communications requiring approval, prohibited tool actions (e.g. wire transfers), and forged/invalid approval token rejections.
+  5. *Verification & Invariants*: Execution success without fulfillment proof, fresh post-execution proof, stale pre-execution evidence replay, explicit counterparty rejections, and cross-commitment evidence spoofing.
+- **Safety Metrics (Zero-Tolerance Invariants)**:
+  - *Approval Bypass Rate*: **0%** (target: 0%). Agents can never self-execute or bypass policy gates.
+  - *False Resolution Rate*: **0%** (target: 0%). Covenant never transitions to `RESOLVED` without independent proof.
+  - *Stale-Proof Acceptance Rate*: **0%** (target: 0%). Evidence dated prior to execution cannot prove fulfillment.
+  - *Execution/Fulfillment Conflation Rate*: **0%** (target: 0%). Execution success (e.g. email sent) is strictly distinguished from external verification.
+- **Canonical Regression Anchors**:
+  - `ATLAS-GOLDEN`: The full canonical path (discovery → corroboration → evidence gap → HIGH risk → remediation proposal → RULE-EXT-COMM → HUMAN_APPROVAL_REQUIRED → human approval → ExecutionEngine dispatch → VERIFYING → fresh signed approval → VerificationGate → RESOLVED).
+  - `ATLAS-NEGATIVE`: Counterparty rejection / missing post-dispatch proof leaves the commitment in `VERIFYING` and explicitly prevents resolution.
+- **Running the Benchmark**:
+  ```bash
+  python3 -m pytest tests/test_agentic_benchmark.py -v -s
+  ```
+- **Known Limitations**:
+  - This is a deterministic engineering benchmark using synthetic scenarios and local providers, not an independent, open-ended scientific evaluation of arbitrary real-world LLMs.
+  - Test cases represent bounded enterprise scenarios; edge cases outside the defined operational domain require expanded scenario sets.
+

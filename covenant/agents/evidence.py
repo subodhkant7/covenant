@@ -86,6 +86,47 @@ class EvidenceAgent(BaseAgent):
         rationale = ""
         confidence = 0.95
 
+        # If zero evidence was gathered across workspace sources:
+        if not gathered_evidence:
+            evidence_gaps.append(f"No documentary records found in workspace sources for obligation '{commitment.title}'.")
+            confidence = 0.35
+            finding = "Uncorroborated obligation: complete documentary evidence gap in workspace."
+            rationale = "Zero documentary evidence references gathered; high uncertainty."
+            claims.append(
+                EvidenceClaim(
+                    source_id="EVIDENCE_SCAN",
+                    claim=f"Automated workspace search returned no matching emails, contracts, or records for '{commitment.id}'.",
+                    is_fact=True,
+                    relevance="HIGH",
+                    confidence=0.95,
+                )
+            )
+            claims.append(
+                EvidenceClaim(
+                    source_id="DERIVED_ANALYSIS",
+                    claim="Commitment lacks factual documentary corroboration; human verification recommended.",
+                    is_fact=False,
+                    relevance="HIGH",
+                    confidence=0.40,
+                )
+            )
+            rec_risk = (
+                RiskLevel.HIGH
+                if commitment.status in [CommitmentStatus.OVERDUE, CommitmentStatus.DUE]
+                else RiskLevel.MEDIUM
+            )
+            return EvidenceAssessment(
+                finding=finding,
+                factual_claims=claims,
+                conflicts=conflicts,
+                corroborations=corroborations,
+                evidence_gaps=evidence_gaps,
+                confidence=confidence,
+                is_blocking_downstream=False,
+                recommended_risk=rec_risk,
+                rationale=rationale,
+            )
+
         # 1. Evaluate Project Atlas Scenario
         if "atlas" in commitment.id.lower():
             # Claim from PRJ-ATLAS

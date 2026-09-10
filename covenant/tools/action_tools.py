@@ -251,11 +251,14 @@ class VerifyCommitmentTool(BaseTool):
                     f"'{rejection_email.get('body', '')[:120]}...'"
                 )
             else:
-                # Search workspace emails for signoff / approval
+                # Search workspace emails for signoff / approval relating to Project Atlas
                 candidate_emails = [
                     e for e in all_emails
                     if "Signed_Atlas_Phase2_Signoff.pdf" in e.get("attachments", [])
-                    or "formally approve" in e.get("body", "").lower()
+                    or (
+                        "formally approve" in e.get("body", "").lower()
+                        and ("atlas" in e.get("subject", "").lower() or "atlas" in e.get("body", "").lower() or "phase 2" in e.get("body", "").lower())
+                    )
                 ]
 
                 # Filter for freshness relative to action execution

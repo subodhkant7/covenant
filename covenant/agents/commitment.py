@@ -96,7 +96,7 @@ class CommitmentAgent(BaseAgent):
 
         # 1. Semantic classification
         # Check for exploratory suggestions first (e.g. "Maybe we should...?", "Could consider...?")
-        if any(s in lower for s in ["maybe we could", "maybe we should", "perhaps we should", "could consider", "might want to", "just a suggestion", "suggest we", "how about"]):
+        if any(s in lower for s in ["maybe we could", "maybe we should", "perhaps we should", "could consider", "might want to", "just a suggestion", "suggest we", "how about", "would be great if", "it would be great"]):
             return CommitmentExtractionResult(
                 is_commitment=False,
                 statement_type=StatementType.SUGGESTION,
