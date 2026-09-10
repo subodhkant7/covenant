@@ -17,6 +17,68 @@ Built for the **Professional Agents** track of the **Agents for Humans Hackathon
 
 ---
 
+## Core Architecture & Governance Boundary
+
+Covenant treats LLM agents strictly as bounded reasoning tools. A model recommendation is **never** system authority.
+
+```
+ENTERPRISE EVIDENCE
+       │
+       ▼
+COMMITMENT DISCOVERY ──► EVIDENCE CORROBORATION / GAP / CONTRADICTION
+                               │
+                               ▼
+                        RISK ASSESSMENT
+                               │
+                               ▼
+                     REMEDIATION PROPOSAL
+                               │
+                               ▼
+                      DETERMINISTIC POLICY
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+        [LOW RISK INTERNAL]          [EXTERNAL / HIGH RISK]
+                │                             │
+                │                     HUMAN APPROVAL GATE
+                │                             │
+                └──────────────┬──────────────┘
+                               ▼
+                      CONTROLLED EXECUTION (T_exec)
+                               │
+                               ▼
+                       VERIFYING STATE
+                               │
+                               ▼
+               INDEPENDENT EXTERNAL EVIDENCE (T_proof > T_exec)
+                               │
+                               ▼
+                       VERIFICATION GATE
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+        [CORROBORATED]               [REJECTED / UNMET]
+                │                             │
+                ▼                             ▼
+        RESOLVED (VERIFIED)                 FAILED
+```
+
+### Evidence Classification Semantics
+Evidence assessments strictly distinguish ontological categories:
+- **`FACT`**: Direct documentary observations from authoritative enterprise systems (e.g. deliverable submitted, milestone date).
+- **`INFERENCE`**: Plausible deductions from observed facts (e.g. downstream Phase 3 kickoff blocked).
+- **`CORROBORATION`**: Multiple independent records supporting the same conclusion.
+- **`EVIDENCE GAP`**: Expected documentary proof is absent; penalizes certainty rather than hallucinating confidence.
+- **`CONTRADICTION`**: Opposing statuses or conflicting signals across independent sources.
+
+### Dual-Verification Gate
+A successful tool invocation or email dispatch is merely **Action Execution**, NOT **Commitment Fulfillment**:
+1. **Execution Proof**: Confirms the runtime tool executed cleanly at timestamp $T_{\text{exec}}$.
+2. **Outcome Verification Gate**: Evaluates independent counterparty evidence strictly satisfying $T_{\text{proof}} > T_{\text{exec}}$. Pre-action records and stale evidence are rejected. A negative counterparty response transitions the commitment to `FAILED`, never `RESOLVED`.
+
+
+---
+
 ## Project Architecture
 
 ```

@@ -78,11 +78,19 @@ class VerificationAgent(BaseAgent):
 
         # Evaluates real-world outcome proof before task closure.
         # Authority over task completion is held exclusively by VerificationGate.
+        executed_at_str = (
+            commitment.next_action.executed_at.isoformat()
+            if commitment.next_action and commitment.next_action.executed_at
+            else None
+        )
         gate_result: RuntimeVerificationResult = await gate.verify_task(
             task=task,
             verifier=verifier,
             expected_outcome=f"Counterparty fulfillment for commitment '{commitment.title}' corroborated by independent proof",
-            verification_criteria={"commitment_id": commitment.id},
+            verification_criteria={
+                "commitment_id": commitment.id,
+                "executed_at": executed_at_str,
+            },
         )
 
         is_verified = gate_result.verified
@@ -124,13 +132,20 @@ class VerificationAgent(BaseAgent):
                 )
         else:
             # If explicit rejection occurred, transition to FAILED if permitted, otherwise remain in VERIFYING
-            if context.parameters.get("simulated_rejection") or context.parameters.get("mark_failed"):
+            is_rejection_signal = (
+                context.parameters.get("simulated_rejection")
+                or context.parameters.get("mark_failed")
+                or "rejected" in rationale.lower()
+                or "disputed" in rationale.lower()
+                or "withheld" in rationale.lower()
+            )
+            if is_rejection_signal:
                 if CommitmentStateMachine.can_transition(commitment.status, CommitmentStatus.FAILED):
                     CommitmentStateMachine.transition(
                         commitment=commitment,
                         target_state=CommitmentStatus.FAILED,
                         agent_name=self.name,
-                        reason=f"Business outcome verification failed by VerificationGate: {rationale}",
+                        reason=f"Business outcome verification rejected by VerificationGate: {rationale}",
                     )
         attempt_count = int(commitment.metadata.get("verification_attempts", 0)) + 1
         commitment.metadata["verification_attempts"] = attempt_count

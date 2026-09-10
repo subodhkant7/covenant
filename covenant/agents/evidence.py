@@ -192,28 +192,93 @@ class EvidenceAgent(BaseAgent):
 
         # 3. Generic Multi-Source Synthesis
         else:
-            for ev in gathered_evidence:
-                is_doc = any(k in ev.source_id.upper() for k in ["EML", "PRJ", "CTR", "INV", "DOC"])
+            if not gathered_evidence or len(gathered_evidence) == 0:
+                # Explicit uncertainty: empty evidence must NOT fabricate 90% confidence
+                confidence = 0.35
+                evidence_gaps.append(
+                    f"No documentary records or communications found for commitment '{commitment.title}' in workspace sources."
+                )
+                finding = "Uncorroborated obligation: complete documentary evidence gap in workspace."
+                rationale = "Zero documentary evidence references gathered; high uncertainty."
                 claims.append(
                     EvidenceClaim(
-                        source_id=ev.source_id,
-                        claim=ev.snippet or ev.title,
-                        is_fact=is_doc,
-                        relevance="HIGH" if is_doc else "MEDIUM",
-                        confidence=ev.confidence or 0.9,
+                        source_id="EVIDENCE_SCAN",
+                        claim=f"Automated workspace search returned no matching emails, contracts, or records for '{commitment.id}'.",
+                        is_fact=True,
+                        relevance="HIGH",
+                        confidence=0.95,
                     )
                 )
-                if "BLOCKED" in (ev.snippet or "").upper():
-                    is_blocking = True
+                claims.append(
+                    EvidenceClaim(
+                        source_id="DERIVED_ANALYSIS",
+                        claim="Commitment lacks factual documentary corroboration; human verification recommended.",
+                        is_fact=False,
+                        relevance="HIGH",
+                        confidence=0.40,
+                    )
+                )
+            else:
+                seen_source_ids = set()
+                duplicate_sources = []
+                for ev in gathered_evidence:
+                    if ev.source_id in seen_source_ids:
+                        duplicate_sources.append(ev.source_id)
+                        continue
+                    seen_source_ids.add(ev.source_id)
 
-            finding = f"Gathered and synthesized {len(gathered_evidence)} evidence sources."
-            rationale = "Synthesized multi-source workspace signals into verified factual claims."
-            confidence = 0.90
+                    is_doc = any(k in ev.source_id.upper() for k in ["EML", "PRJ", "CTR", "INV", "DOC"])
+                    claims.append(
+                        EvidenceClaim(
+                            source_id=ev.source_id,
+                            claim=ev.snippet or ev.title,
+                            is_fact=is_doc,
+                            relevance="HIGH" if is_doc else "MEDIUM",
+                            confidence=ev.confidence or (0.95 if is_doc else 0.75),
+                        )
+                    )
+                    if "BLOCK" in (ev.snippet or "").upper() or "HALT" in (ev.snippet or "").upper():
+                        is_blocking = True
+
+                # Check for conflicting claims
+                status_terms_completed = ["complete", "finished", "approved", "delivered"]
+                status_terms_pending = ["pending", "delayed", "failed", "error", "unresolved", "blocked"]
+
+                comp_ev = [e for e in gathered_evidence if any(t in (e.snippet or "").lower() for t in status_terms_completed)]
+                pend_ev = [e for e in gathered_evidence if any(t in (e.snippet or "").lower() for t in status_terms_pending)]
+
+                if comp_ev and pend_ev:
+                    conflicts.append(
+                        EvidenceConflict(
+                            source_a=comp_ev[0].source_id,
+                            source_b=pend_ev[0].source_id,
+                            description=(
+                                f"Status conflict detected: {comp_ev[0].source_id} reports completion "
+                                f"while {pend_ev[0].source_id} reports pending/blocked status."
+                            ),
+                            conflict_type="STATUS_CONTRADICTION",
+                            severity=RiskLevel.HIGH,
+                        )
+                    )
+                    finding = f"Contradictory evidence detected across {len(seen_source_ids)} sources."
+                    rationale = "Workspace sources present mutually incompatible status claims."
+                    confidence = 0.65
+                elif len(seen_source_ids) >= 2:
+                    corroborations.append(
+                        f"Independent sources {list(seen_source_ids)[:2]} corroborate obligation state for '{commitment.title}'."
+                    )
+                    finding = f"Multi-source evidence corroborated across {len(seen_source_ids)} workspace records."
+                    rationale = "Synthesized multi-source workspace signals into verified factual claims."
+                    confidence = 0.92
+                else:
+                    finding = f"Single-source evidence gathered for '{commitment.title}'."
+                    rationale = "Documentary evidence captured; awaiting secondary corroboration."
+                    confidence = 0.85
 
         rec_risk = (
             RiskLevel.HIGH
-            if (is_blocking and (conflicts or evidence_gaps))
-            else (RiskLevel.MEDIUM if (is_blocking or conflicts or evidence_gaps) else RiskLevel.LOW)
+            if (is_blocking and (conflicts or evidence_gaps or commitment.status in [CommitmentStatus.OVERDUE, CommitmentStatus.DUE]))
+            else (RiskLevel.MEDIUM if (is_blocking or conflicts or (evidence_gaps and commitment.status in [CommitmentStatus.OVERDUE, CommitmentStatus.DUE])) else RiskLevel.LOW)
         )
 
         return EvidenceAssessment(

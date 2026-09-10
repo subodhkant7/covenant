@@ -113,6 +113,7 @@ def test_guard_resolved_verification_failure(base_commitment: Commitment):
 
     # Mark verified -> now transition to RESOLVED succeeds
     base_commitment.verification_result.is_verified = True
+    base_commitment.verification_result.evidence_ids = ["EML-SIGNOFF-01"]
     CommitmentStateMachine.transition(
         base_commitment,
         CommitmentStatus.RESOLVED,

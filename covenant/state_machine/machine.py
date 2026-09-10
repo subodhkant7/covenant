@@ -86,7 +86,7 @@ LEGAL_TRANSITIONS: Dict[CommitmentStatus, Set[CommitmentStatus]] = {
     CommitmentStatus.ESCALATED: {
         CommitmentStatus.INVESTIGATING,
         CommitmentStatus.AWAITING_APPROVAL,
-        CommitmentStatus.RESOLVED,
+        CommitmentStatus.ACTION_READY,
         CommitmentStatus.CANCELLED,
     },
     CommitmentStatus.FAILED: {
@@ -123,6 +123,10 @@ def _guard_resolved(commitment: Commitment) -> None:
         rationale = commitment.verification_result.rationale if commitment.verification_result else "No verification result recorded."
         raise GuardConditionFailedError(
             f"Cannot resolve commitment without verified outcome: {rationale}"
+        )
+    if not commitment.verification_result.evidence_ids or len(commitment.verification_result.evidence_ids) == 0:
+        raise GuardConditionFailedError(
+            "Cannot resolve commitment without corroborating evidence IDs in verification result."
         )
 
 

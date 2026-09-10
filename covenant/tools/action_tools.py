@@ -187,6 +187,7 @@ class VerifyCommitmentTool(BaseTool):
         "properties": {
             "commitment_id": {"type": "string"},
             "query_term": {"type": "string"},
+            "executed_at": {"type": "string"},
         },
         "required": ["commitment_id"],
     }
@@ -195,52 +196,135 @@ class VerifyCommitmentTool(BaseTool):
         self,
         commitment_id: str,
         query_term: Optional[str] = None,
+        executed_at: Optional[Any] = None,
         **kwargs: Any,
     ) -> ToolResult:
         """
         True independent environment verification:
-        Searches emails and project status to corroborate real outcome.
+        Searches emails and project status to corroborate real outcome with temporal freshness checks.
         """
         is_verified = False
         rationale = ""
         found_evidence_ids = []
+        is_rejected = False
+
+        # 1. Parse execution timestamp for temporal freshness
+        exec_dt: Optional[datetime] = None
+        if executed_at:
+            if isinstance(executed_at, str):
+                try:
+                    exec_dt = datetime.fromisoformat(executed_at.replace("Z", "+00:00"))
+                except Exception:
+                    exec_dt = None
+            elif isinstance(executed_at, datetime):
+                exec_dt = executed_at if executed_at.tzinfo else executed_at.replace(tzinfo=timezone.utc)
+
+        def _is_fresh(item_date: Optional[str]) -> bool:
+            if not exec_dt or not item_date:
+                return True
+            try:
+                dt = datetime.fromisoformat(item_date.replace("Z", "+00:00"))
+                return dt >= exec_dt
+            except Exception:
+                return True
 
         if "atlas" in commitment_id.lower():
-            # Search workspace emails for signoff / approval received after the initial request
-            emails = workspace_store.search_emails("approv")
-            signoff_email = next(
-                (e for e in emails if "Signed_Atlas_Phase2_Signoff.pdf" in e.get("attachments", []) or "formally approve" in e.get("body", "").lower()),
+            all_emails = getattr(workspace_store, "emails", [])
+
+            # Check for explicit rejection / dispute emails first
+            rejection_terms = ["cannot approve", "reject", "not approved", "declined", "dispute", "unresolved"]
+            rejection_email = next(
+                (
+                    e for e in all_emails
+                    if any(t in e.get("body", "").lower() for t in rejection_terms)
+                    and _is_fresh(e.get("date"))
+                ),
                 None,
             )
-            # Also check project milestone
-            atlas_prj = workspace_store.get_project_by_id("PRJ-ATLAS")
-            m2 = next((m for m in atlas_prj.get("milestones", []) if m["id"] == "M2"), None) if atlas_prj else None
 
-            if signoff_email and m2 and m2.get("status") == "APPROVED_BY_CLIENT":
-                is_verified = True
-                found_evidence_ids.append(signoff_email["id"])
-                rationale = f"Formal signed approval verified from {signoff_email['from']} ({signoff_email['id']}). Milestone M2 status is APPROVED_BY_CLIENT."
-            elif signoff_email:
-                is_verified = True
-                found_evidence_ids.append(signoff_email["id"])
-                rationale = f"Written approval email received from {signoff_email['from']} ({signoff_email['id']})."
-            else:
+            if rejection_email:
                 is_verified = False
-                rationale = "Action was executed, but no corroborating client approval response has been received in inbox yet."
+                is_rejected = True
+                found_evidence_ids.append(rejection_email["id"])
+                rationale = (
+                    f"Counterparty explicitly rejected or withheld approval ({rejection_email['id']}): "
+                    f"'{rejection_email.get('body', '')[:120]}...'"
+                )
+            else:
+                # Search workspace emails for signoff / approval
+                candidate_emails = [
+                    e for e in all_emails
+                    if "Signed_Atlas_Phase2_Signoff.pdf" in e.get("attachments", [])
+                    or "formally approve" in e.get("body", "").lower()
+                ]
+
+                # Filter for freshness relative to action execution
+                fresh_emails = [e for e in candidate_emails if _is_fresh(e.get("date"))]
+                stale_emails = [e for e in candidate_emails if not _is_fresh(e.get("date"))]
+
+                # Also check project milestone
+                atlas_prj = workspace_store.get_project_by_id("PRJ-ATLAS")
+                m2 = next((m for m in atlas_prj.get("milestones", []) if m["id"] == "M2"), None) if atlas_prj else None
+
+                if fresh_emails:
+                    signoff_email = fresh_emails[0]
+                    if m2 and m2.get("status") == "APPROVED_BY_CLIENT":
+                        is_verified = True
+                        found_evidence_ids.append(signoff_email["id"])
+                        rationale = (
+                            f"Formal signed approval verified from {signoff_email['from']} ({signoff_email['id']}). "
+                            "Milestone M2 status is APPROVED_BY_CLIENT."
+                        )
+                    else:
+                        is_verified = True
+                        found_evidence_ids.append(signoff_email["id"])
+                        rationale = f"Written approval email received from {signoff_email['from']} ({signoff_email['id']})."
+                elif stale_emails:
+                    is_verified = False
+                    rationale = (
+                        f"Candidate approval artifact pre-dates action execution timestamp "
+                        f"(stale evidence {stale_emails[0]['id']} rejected). Awaiting fresh counterparty verification."
+                    )
+                else:
+                    is_verified = False
+                    rationale = "Action was executed, but no corroborating client approval response has been received in inbox yet."
 
         elif "apex" in commitment_id.lower():
-            emails = workspace_store.search_emails("en route")
-            if emails:
+            all_emails = getattr(workspace_store, "emails", [])
+            candidate_emails = [e for e in all_emails if "en route" in e.get("body", "").lower()]
+            fresh_emails = [e for e in candidate_emails if _is_fresh(e.get("date"))]
+            stale_emails = [e for e in candidate_emails if not _is_fresh(e.get("date"))]
+
+            if fresh_emails:
                 is_verified = True
-                found_evidence_ids.append(emails[0]["id"])
-                rationale = f"Technician dispatch confirmed by service manager ({emails[0]['id']})."
+                found_evidence_ids.append(fresh_emails[0]["id"])
+                rationale = f"Technician dispatch confirmed by service manager ({fresh_emails[0]['id']})."
+            elif stale_emails:
+                is_verified = False
+                rationale = (
+                    f"Previous dispatch notice pre-dates current escalation ({stale_emails[0]['id']}). "
+                    "No new calibration completion report found."
+                )
             else:
                 is_verified = False
-                rationale = "No calibration completion report found in records."
+                rationale = "No calibration completion report or dispatch confirmation found in records."
 
         else:
-            is_verified = False
-            rationale = "No independent outcome verification evidence found."
+            query = (query_term or commitment_id).lower()
+            all_emails = getattr(workspace_store, "emails", [])
+            matching_fresh = [
+                e for e in all_emails
+                if (query in e.get("subject", "").lower() or query in e.get("body", "").lower())
+                and any(k in e.get("body", "").lower() for k in ["confirmed", "completed", "delivered"])
+                and _is_fresh(e.get("date"))
+            ]
+            if matching_fresh:
+                is_verified = True
+                found_evidence_ids.append(matching_fresh[0]["id"])
+                rationale = f"Independent confirmation verified from {matching_fresh[0]['from']} ({matching_fresh[0]['id']})."
+            else:
+                is_verified = False
+                rationale = "No independent outcome verification evidence found post-execution."
 
         res = VerificationResult(
             commitment_id=commitment_id,
@@ -249,9 +333,16 @@ class VerifyCommitmentTool(BaseTool):
             is_verified=is_verified,
             rationale=rationale,
             evidence_ids=found_evidence_ids,
-            confidence=0.98 if is_verified else 0.3,
+            confidence=0.98 if is_verified else (0.1 if is_rejected else 0.3),
         )
-        return ToolResult(success=True, data=res.model_dump(mode="json"))
+        return ToolResult(
+            success=True,
+            data={
+                **res.model_dump(mode="json"),
+                "is_rejected": is_rejected,
+                "fresh_evidence_count": len(found_evidence_ids),
+            },
+        )
 
 
 def register_action_tools():

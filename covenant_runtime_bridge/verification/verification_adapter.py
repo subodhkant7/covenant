@@ -36,7 +36,13 @@ class CovenantVerificationAdapter(IVerifier):
         )
 
         # Execute Covenant's independent verification check
-        res = await self.verify_tool.execute(commitment_id=cid)
+        executed_at = criteria.get("executed_at")
+        query_term = criteria.get("query_term")
+        res = await self.verify_tool.execute(
+            commitment_id=cid,
+            executed_at=executed_at,
+            query_term=query_term,
+        )
         if not res.success:
             return VerificationResult(
                 task_id=request.task_id,

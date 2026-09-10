@@ -135,6 +135,7 @@ class SQLiteCommitmentRepository(AbstractCommitmentRepository, AbstractEventRepo
             "verification_result": json.loads(row["verification_result_json"]) if row["verification_result_json"] else None,
             "tags": json.loads(row["tags_json"]),
             "metadata": meta,
+            "obligation_direction": row["obligation_direction"] if ("obligation_direction" in row.keys() and row["obligation_direction"]) else "THEY_OWE_US",
         }
         return Commitment.model_validate(data)
 

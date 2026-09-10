@@ -692,8 +692,8 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                 </div>
               </div>
 
-              {/* SECTION 8, 9 & 10: VERIFICATION & FINAL OUTCOME */}
-              <div className={`p-4 rounded-xl border space-y-3 ${
+              {/* SECTION 8, 9 & 10: DUAL-VERIFICATION GATE & OUTCOME */}
+              <div className={`p-4 rounded-xl border space-y-3.5 ${
                 currentState === 'RESOLVED' 
                   ? 'bg-emerald-950/20 border-emerald-800/80' 
                   : currentState === 'FAILED'
@@ -703,25 +703,68 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <span className="text-[11px] font-mono uppercase font-bold text-blue-400 flex items-center space-x-1.5">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>8, 9 &amp; 10. Verification &amp; Final Outcome</span>
+                    <span>8, 9 &amp; 10. Dual-Verification Gate &amp; Final Outcome</span>
                   </span>
                   <span className="text-[10px] font-mono text-slate-400">Authority: VerificationGate</span>
                 </div>
 
-                <div className="space-y-2 text-[11px]">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-300">Authoritative Gate Result:</span>
-                    <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
-                      trace?.verification?.gate_result === 'PASSED' || currentState === 'RESOLVED'
-                        ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
-                        : trace?.verification?.gate_result === 'FAILED' || currentState === 'FAILED'
-                        ? 'bg-rose-900/60 text-rose-300 border border-rose-700'
-                        : 'bg-blue-900/40 text-blue-300 border border-blue-800'
-                    }`}>
-                      {trace?.verification?.gate_result || (currentState === 'RESOLVED' ? 'PASSED' : 'AWAITING_COUNTERPARTY_RESPONSE')}
-                    </span>
+                {/* DUAL-GATE ARCHITECTURE CALLOUT */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                  {/* Gate 1: Action Execution */}
+                  <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 font-bold flex items-center space-x-1">
+                        <Cpu className="w-3 h-3 text-blue-400" />
+                        <span>Gate 1: Action Execution</span>
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                        {trace?.execution?.status || (['VERIFYING', 'RESOLVED'].includes(currentState) ? 'DISPATCHED' : 'PENDING')}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 font-medium">
+                      Runtime Tool: <strong className="text-slate-100">{trace?.execution?.tool_name || 'send_followup'}</strong>
+                    </p>
+                    <p className="text-slate-500 text-[10px] font-mono">
+                      Execution ID: {trace?.execution?.execution_id || 'exec_active'}
+                    </p>
+                    <div className="text-[10px] text-slate-400 italic pt-0.5 border-t border-slate-800/80">
+                      Dispatched into external communication stream. Execution success does NOT resolve obligation.
+                    </div>
                   </div>
 
+                  {/* Gate 2: Outcome Verification */}
+                  <div className={`p-3 rounded-lg border space-y-1.5 ${
+                    currentState === 'RESOLVED'
+                      ? 'bg-emerald-950/30 border-emerald-800/80 text-emerald-200'
+                      : currentState === 'FAILED'
+                      ? 'bg-rose-950/30 border-rose-800/80 text-rose-200'
+                      : 'bg-blue-950/30 border-blue-800/80 text-blue-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono uppercase font-bold flex items-center space-x-1">
+                        <Scale className="w-3 h-3 text-blue-400" />
+                        <span>Gate 2: Independent Outcome</span>
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
+                        trace?.verification?.gate_result === 'PASSED' || currentState === 'RESOLVED'
+                          ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-600'
+                          : trace?.verification?.gate_result === 'FAILED' || currentState === 'FAILED'
+                          ? 'bg-rose-900/80 text-rose-200 border border-rose-600'
+                          : 'bg-blue-900/60 text-blue-200 border border-blue-700 animate-pulse'
+                      }`}>
+                        {trace?.verification?.gate_result || (currentState === 'RESOLVED' ? 'PASSED' : 'AWAITING_PROOF')}
+                      </span>
+                    </div>
+                    <p className="text-slate-300 font-medium text-xs">
+                      Criterion: Fresh counterparty proof (<span className="font-mono text-slate-400">T &gt; T_exec</span>)
+                    </p>
+                    <div className="text-[10px] text-slate-400 italic pt-0.5 border-t border-slate-800/80">
+                      Authority Boundary: VerificationGate enforces real-world proof before permitting RESOLVED state.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-[11px]">
                   <p className="text-slate-300 bg-slate-900/70 p-2.5 rounded border border-slate-800 text-xs">
                     {trace?.verification?.rationale || commitment.verification_result?.rationale || 
                       'Awaiting fresh counterparty evidence. VerificationGate evaluates independent proof before task closure.'}
@@ -729,15 +772,16 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
 
                   {/* Fresh Evidence for Verification */}
                   {trace?.verification?.fresh_evidence?.length > 0 && (
-                    <div className="space-y-1 pt-1">
-                      <span className="text-[10px] font-mono uppercase text-emerald-400 font-semibold block">
-                        Fresh Corroborating Evidence Used for Verification:
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold block flex items-center space-x-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        <span>Fresh Corroborating Evidence Verified Post-Execution:</span>
                       </span>
                       {trace.verification.fresh_evidence.map((fe, idx) => (
-                        <div key={idx} className="p-2 rounded bg-emerald-950/30 border border-emerald-800/60 text-emerald-300 text-xs">
+                        <div key={idx} className="p-2.5 rounded bg-emerald-950/30 border border-emerald-800/60 text-emerald-300 text-xs space-y-0.5">
                           <div className="flex items-center space-x-2 font-mono text-[10px]">
-                            <span className="font-bold">[{fe.source_id}]</span>
-                            <span>{fe.title}</span>
+                            <span className="font-bold bg-emerald-900/80 px-1 py-0.5 rounded border border-emerald-700">[{fe.source_id}]</span>
+                            <span className="font-semibold text-emerald-200">{fe.title}</span>
                           </div>
                           <p className="text-slate-300 italic text-[11px] mt-0.5">"{fe.snippet}"</p>
                         </div>
@@ -760,15 +804,20 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                     ) : (
                       <Activity className="w-5 h-5 text-blue-400 shrink-0 mt-0.5 animate-pulse" />
                     )}
-                    <div>
-                      <div className="font-bold text-xs uppercase font-mono tracking-wider">
-                        Outcome: {currentState}
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-xs uppercase font-mono tracking-wider flex items-center space-x-2">
+                        <span>Outcome: {currentState === 'RESOLVED' ? 'RESOLVED (VERIFIED)' : currentState}</span>
+                        {currentState === 'RESOLVED' && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-900/80 text-emerald-200 border border-emerald-700 font-normal">
+                            Institutional Guarantee
+                          </span>
+                        )}
                       </div>
                       <p className="text-slate-300 text-xs mt-0.5">
                         {trace?.final_outcome?.summary || (
                           currentState === 'RESOLVED' 
                             ? 'Commitment successfully resolved with multi-source independent verification.'
-                            : 'Currently undergoing active recovery and verification loop.'
+                            : 'Remedy action dispatched; waiting for external corroborating proof.'
                         )}
                       </p>
                     </div>
