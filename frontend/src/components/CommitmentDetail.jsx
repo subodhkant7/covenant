@@ -173,7 +173,15 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
   const statusBadge = getStatusBadge(currentState);
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full max-w-2xl bg-[#0b0f17] border-l border-slate-800 shadow-2xl z-50 overflow-y-auto flex flex-col font-sans">
+    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
+      {/* Backdrop Blur Overlay */}
+      <div 
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+      
+      {/* Expanded Enterprise Inspector Drawer */}
+      <div className="relative w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-[1550px] bg-[#0b0f17] border-l border-slate-800 shadow-2xl overflow-y-auto flex flex-col font-sans z-10">
       
       {/* Header Bar */}
       <div className="p-5 border-b border-slate-800 bg-[#0d131d]/95 backdrop-blur sticky top-0 z-20 flex items-start justify-between gap-4">
@@ -327,7 +335,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                 <span className="text-[10px] font-mono text-slate-400">{trace?.stages?.length || 10} Decision Stages</span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[10px] font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2 text-[10px] font-mono">
                 {(trace?.stages || [
                   { step: 1, name: "Commitment detected", status: "COMPLETED" },
                   { step: 2, name: "Evidence gathered", status: "COMPLETED" },
@@ -1169,5 +1177,6 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
       </div>
 
     </div>
+  </div>
   );
 }

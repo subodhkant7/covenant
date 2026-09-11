@@ -6,6 +6,19 @@
   color-scheme: dark;
 }
 
+/* Responsive typography scaling for 4K and Ultra-wide desktop viewports */
+@media (min-width: 2560px) {
+  html {
+    font-size: 19px;
+  }
+}
+
+@media (min-width: 3200px) {
+  html {
+    font-size: 22px;
+  }
+}
+
 body {
   margin: 0;
   background-color: #090d12;
