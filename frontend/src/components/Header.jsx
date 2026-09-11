@@ -33,11 +33,11 @@ export default function Header({
             <div className="flex items-center space-x-2">
               <span className="text-lg font-bold tracking-tight text-white font-mono">COVENANT</span>
               <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                Agent Kernel v0.1
+                Commitment Intelligence
               </span>
             </div>
             <p className="text-xs text-slate-400 font-normal">
-              Autonomous Commitment-Resolution &amp; Lifecycle Agent
+              Commitment Intelligence &amp; Fulfillment Verification
             </p>
           </div>
         </div>

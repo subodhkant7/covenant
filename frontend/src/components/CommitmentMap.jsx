@@ -61,7 +61,7 @@ const HEALTH_CONFIG = {
     desc: 'Promise deadline breached',
   },
   RECOVERING: {
-    label: 'RECOVERING',
+    label: 'RECOVERY IN PROGRESS',
     classes: 'bg-cyan-950/60 text-cyan-300 border-cyan-600',
     dot: 'bg-cyan-400 animate-pulse',
     desc: 'Action dispatched; awaiting counterparty response',

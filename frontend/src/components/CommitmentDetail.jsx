@@ -26,7 +26,9 @@ import {
   CheckCircle,
   XCircle,
   HelpCircle,
-  Eye
+  Eye,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { fetchCommitmentTrace } from '../services/api';
 
@@ -37,6 +39,37 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
   const [verifying, setVerifying] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [activeViewTab, setActiveViewTab] = useState('trace'); // 'trace' | 'timeline' | 'evidence'
+  const [expandedAuditGroups, setExpandedAuditGroups] = useState({});
+
+  // Group recurring verification checks in audit trail
+  const groupAuditTimeline = (timelineList) => {
+    const blocks = [];
+    let currentMonGroup = null;
+
+    for (const t of (timelineList || [])) {
+      const isMon = t.summary && t.summary.includes('Verification check #') && t.summary.includes('Awaiting counterparty response');
+      if (isMon) {
+        if (!currentMonGroup) {
+          currentMonGroup = {
+            type: 'MONITORING_GROUP',
+            id: `audit_grp_${t.id || Math.random()}`,
+            items: [t],
+          };
+          blocks.push(currentMonGroup);
+        } else {
+          currentMonGroup.items.push(t);
+        }
+      } else {
+        currentMonGroup = null;
+        blocks.push({
+          type: 'SINGLE_ITEM',
+          id: t.id,
+          item: t,
+        });
+      }
+    }
+    return blocks;
+  };
 
   const loadTrace = async (id) => {
     if (!id) return;
@@ -157,7 +190,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
               Risk: <strong className={currentRisk === 'HIGH' || currentRisk === 'CRITICAL' ? 'text-rose-400' : 'text-amber-400'}>{currentRisk}</strong>
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-slate-800/80 text-slate-400 border border-slate-700/80">
-              Health: {health}
+              Commitment Health: {health === 'RECOVERING' ? 'RECOVERY IN PROGRESS' : (health ? health.replace('_', ' ') : 'STABLE')}
             </span>
           </div>
           <h2 className="text-base font-bold text-white leading-snug break-words">
@@ -381,7 +414,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                 <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                   <span className="text-[11px] font-mono uppercase font-bold text-blue-400 flex items-center space-x-1.5">
                     <FileText className="w-3.5 h-3.5" />
-                    <span>2. Evidence Intelligence &amp; Multi-Source Corroboration</span>
+                    <span>2. Evidence Intelligence &amp; Multi-Source Synthesis</span>
                   </span>
                   <span className="text-[10px] font-mono text-slate-400">Authority: EvidenceAgent (Strands Synthesis)</span>
                 </div>
@@ -400,7 +433,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                         </span>
                       )}
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-900/60 text-blue-200 border border-blue-700">
-                        {Math.round((assessment?.confidence || 0.96) * 100)}% Confidence
+                        {Math.round((assessment?.confidence || 0.96) * 100)}% Analysis Confidence
                       </span>
                     </div>
                   </div>
@@ -505,7 +538,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                           <div key={idx} className="p-2 rounded bg-slate-900/80 border border-emerald-900/40 space-y-0.5 text-xs">
                             <div className="flex items-center justify-between font-mono text-[10px]">
                               <span className="font-bold text-emerald-400">[{claim.source_id}]</span>
-                              <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Conf</span>
+                              <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Analysis Conf</span>
                             </div>
                             <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
                           </div>
@@ -527,7 +560,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                           <div key={idx} className="p-2 rounded bg-slate-900/80 border border-purple-900/40 space-y-0.5 text-xs">
                             <div className="flex items-center justify-between font-mono text-[10px]">
                               <span className="font-bold text-purple-400">[{claim.source_id}]</span>
-                              <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Conf</span>
+                              <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Analysis Conf</span>
                             </div>
                             <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
                           </div>
@@ -550,7 +583,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                             [{ev.source_type?.toUpperCase()} {ev.source_id}]
                           </span>
                           <span className="text-[10px] font-mono text-slate-400">
-                            {Math.round((ev.confidence || 0.9) * 100)}% Confidence
+                            {Math.round((ev.confidence || 0.9) * 100)}% Source Confidence
                           </span>
                         </div>
                         <p className="font-semibold text-slate-200 text-xs">{ev.title}</p>
@@ -842,31 +875,93 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
             </div>
 
             <div className="space-y-2">
-              {(trace?.timeline || []).map((t, idx) => (
-                <div key={idx} className="p-3 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1.5 font-mono text-[11px]">
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span className="font-bold text-blue-400">{t.actor}</span>
-                    <span className="text-[10px] text-slate-500">{new Date(t.timestamp).toLocaleString()}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 uppercase">
-                      {t.event_type}
-                    </span>
-                    <span className={`px-1.5 py-0.2 rounded text-[10px] ${
-                      t.result_status === 'SUCCESS' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {t.result_status}
-                    </span>
-                    {t.state_after && (
-                      <span className="text-amber-400 text-[10px]">→ {t.state_after}</span>
+              {groupAuditTimeline(trace?.timeline).map((block, bIdx) => {
+                if (block.type === 'MONITORING_GROUP') {
+                  const items = block.items;
+                  const latest = items[0];
+                  const older = items.slice(1);
+                  const isExpanded = !!expandedAuditGroups[block.id];
+
+                  return (
+                    <div key={block.id || bIdx} className="p-3 rounded-lg bg-slate-950/80 border border-blue-900/40 space-y-2 font-mono text-[11px]">
+                      <div className="flex items-center justify-between text-blue-300">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+                          <span className="font-bold text-xs uppercase tracking-wider text-blue-300">
+                            Verification Monitoring
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          {items.length} checks recorded • Bounded Autonomous Cycle
+                        </span>
+                      </div>
+                      
+                      {/* Latest entry */}
+                      <div className="p-2 rounded bg-slate-900/90 border border-blue-800/40 space-y-1">
+                        <div className="flex items-center justify-between text-slate-400 text-[10px]">
+                          <span className="font-bold text-blue-400">{latest.actor}</span>
+                          <span className="text-slate-500">{new Date(latest.timestamp).toLocaleString()}</span>
+                        </div>
+                        <p className="font-sans text-xs text-slate-200">{latest.summary}</p>
+                      </div>
+
+                      {/* Expandable older checks */}
+                      {older.length > 0 && (
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedAuditGroups(prev => ({ ...prev, [block.id]: !prev[block.id] }))}
+                            className="text-[10px] font-mono text-blue-400 hover:text-blue-300 transition-colors flex items-center space-x-1 underline py-0.5 cursor-pointer"
+                          >
+                            <span>{isExpanded ? `▾ Hide ${older.length} earlier checks` : `▸ +${older.length} earlier verification checks (Show monitoring history)`}</span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="mt-2 space-y-1.5 pl-2 border-l border-blue-900/50">
+                              {older.map((ot, oIdx) => (
+                                <div key={oIdx} className="p-1.5 rounded bg-slate-900/60 border border-slate-800 text-[10px] text-slate-400 space-y-0.5">
+                                  <div className="flex justify-between text-slate-500">
+                                    <span>{ot.actor}</span>
+                                    <span>{new Date(ot.timestamp).toLocaleTimeString()}</span>
+                                  </div>
+                                  <p className="text-slate-300">{ot.summary}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                const t = block.item;
+                return (
+                  <div key={block.id || bIdx} className="p-3 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1.5 font-mono text-[11px]">
+                    <div className="flex items-center justify-between text-slate-400">
+                      <span className="font-bold text-blue-400">{t.actor}</span>
+                      <span className="text-[10px] text-slate-500">{new Date(t.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 uppercase">
+                        {t.event_type}
+                      </span>
+                      <span className={`px-1.5 py-0.2 rounded text-[10px] ${
+                        t.result_status === 'SUCCESS' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        {t.result_status}
+                      </span>
+                      {t.state_after && (
+                        <span className="text-amber-400 text-[10px]">→ {t.state_after}</span>
+                      )}
+                    </div>
+                    <p className="font-sans text-xs text-slate-200 mt-1">{t.summary}</p>
+                    {t.rationale && (
+                      <p className="font-sans text-[11px] text-slate-400 italic">"{t.rationale}"</p>
                     )}
                   </div>
-                  <p className="font-sans text-xs text-slate-200 mt-1">{t.summary}</p>
-                  {t.rationale && (
-                    <p className="font-sans text-[11px] text-slate-400 italic">"{t.rationale}"</p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
 
               {(!trace?.timeline || trace.timeline.length === 0) && (
                 <div className="p-6 text-center text-slate-500 text-xs font-mono">
@@ -883,7 +978,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
         {activeViewTab === 'evidence' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between text-slate-400 text-[11px] font-mono border-b border-slate-800 pb-2">
-              <span className="uppercase font-bold text-slate-300">Corroborated Workspace Evidence &amp; Intelligence</span>
+              <span className="uppercase font-bold text-slate-300">Workspace Evidence &amp; Intelligence Analysis</span>
               <span className="text-[10px]">{trace?.evidence?.length || commitment.evidence_references?.length || 0} Records</span>
             </div>
 
@@ -901,12 +996,12 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                     </span>
                   )}
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-900/60 text-blue-200 border border-blue-700">
-                    {Math.round((assessment?.confidence || 0.96) * 100)}% Confidence
+                    {Math.round((assessment?.confidence || 0.96) * 100)}% Analysis Confidence
                   </span>
                 </div>
               </div>
               <p className="text-slate-100 text-xs font-semibold leading-relaxed">
-                {assessment?.finding || "Multi-source evidence corroborated across workspace records."}
+                {assessment?.finding || "Multi-source evidence analyzed across workspace records."}
               </p>
               {assessment?.rationale && (
                 <p className="text-slate-400 italic text-[11px]">
@@ -1006,7 +1101,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                       <div key={idx} className="p-2 rounded bg-slate-900/80 border border-emerald-900/40 space-y-0.5 text-xs">
                         <div className="flex items-center justify-between font-mono text-[10px]">
                           <span className="font-bold text-emerald-400">[{claim.source_id}]</span>
-                          <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Conf</span>
+                          <span className="text-slate-400">{Math.round((claim.confidence || 0.95) * 100)}% Analysis Conf</span>
                         </div>
                         <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
                       </div>
@@ -1028,7 +1123,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                       <div key={idx} className="p-2 rounded bg-slate-900/80 border border-purple-900/40 space-y-0.5 text-xs">
                         <div className="flex items-center justify-between font-mono text-[10px]">
                           <span className="font-bold text-purple-400">[{claim.source_id}]</span>
-                          <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Conf</span>
+                          <span className="text-slate-400">{Math.round((claim.confidence || 0.89) * 100)}% Analysis Conf</span>
                         </div>
                         <p className="text-slate-200 text-[11px] leading-snug">{claim.claim}</p>
                       </div>
@@ -1040,7 +1135,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
 
             <div className="space-y-3 pt-2">
               <span className="text-[10px] font-mono uppercase font-semibold text-slate-400 block">
-                All Corroborated Workspace Records
+                {conflicts.length > 0 ? 'Analyzed Workspace Records' : 'All Corroborated Workspace Records'}
               </span>
 
               {(trace?.evidence || commitment.evidence_references || []).map((ev, idx) => (
@@ -1053,7 +1148,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
                       <span className="font-mono text-slate-300 font-bold text-xs">{ev.source_id}</span>
                     </div>
                     <span className="font-mono text-[10px] text-slate-400">
-                      Confidence: {Math.round((ev.confidence || 0.9) * 100)}%
+                      Source Confidence: {Math.round((ev.confidence || 0.9) * 100)}%
                     </span>
                   </div>
                   <h4 className="font-bold text-slate-200 text-xs">{ev.title}</h4>

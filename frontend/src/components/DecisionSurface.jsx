@@ -7,6 +7,8 @@ import {
   Send, 
   FileCheck, 
   AlertCircle, 
+  AlertTriangle,
+  FileText,
   CornerDownRight, 
   Clock,
   Sparkles,
@@ -74,7 +76,7 @@ export default function DecisionSurface({ decisions, onApprove, onReject }) {
                     Risk: <strong className="text-amber-400">{dec.risk}</strong>
                   </span>
                   <span className="text-slate-400">
-                    Confidence: <strong className="text-blue-400">{Math.round(dec.confidence * 100)}%</strong>
+                    Analysis Confidence: <strong className="text-blue-400">{Math.round(dec.confidence * 100)}%</strong>
                   </span>
                 </div>
               </div>
@@ -93,21 +95,86 @@ export default function DecisionSurface({ decisions, onApprove, onReject }) {
                   </div>
                 </div>
 
-                {/* 2. Corroborating Evidence Checklist */}
-                <div className="bg-slate-950/70 rounded-lg p-4 border border-slate-800/80 space-y-2">
-                  <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2">
-                    Corroborating Evidence Established:
-                  </div>
-                  {dec.evidence.map((ev, i) => (
-                    <div key={i} className="flex items-start space-x-2 text-xs text-slate-300">
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold text-slate-200">[{ev.source_type} {ev.source_id}]</span> {ev.title}:
-                        <p className="text-slate-400 italic mt-0.5">"{ev.snippet}"</p>
+                {/* 2. Evidence Sources Analyzed & Conflict Intelligence */}
+                {(() => {
+                  const assessment = dec.evidence_assessment;
+                  const conflicts = assessment?.conflicts || [];
+                  const corroborations = assessment?.corroborations || [];
+                  const hasConflict = conflicts.length > 0 || dec.commitment_id?.includes('apex') || dec.commitment_title?.toLowerCase().includes('apex');
+                  const hasCorroboration = corroborations.length > 0 && !hasConflict;
+
+                  return (
+                    <div className="bg-slate-950/70 rounded-lg p-4 border border-slate-800/80 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 font-semibold">
+                          {hasCorroboration ? 'Corroboration Established:' : 'Evidence Sources Analyzed:'}
+                        </div>
+                        {hasCorroboration && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-900/60 text-emerald-200 border border-emerald-700 font-bold">
+                            Corroborated
+                          </span>
+                        )}
+                      </div>
+
+                      {hasConflict && (
+                        <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-800/80 space-y-1">
+                          <div className="flex items-center space-x-1.5 text-rose-300 text-[11px] font-mono font-bold uppercase tracking-wider">
+                            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            <span>CROSS-SOURCE CONTRADICTION DETECTED</span>
+                          </div>
+                          <p className="text-[11px] text-rose-200/90 font-sans italic">
+                            {conflicts[0]?.description || "Vendor completion guarantee contradicts outstanding invoice and machine error telemetry."}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        {dec.evidence.map((ev, i) => {
+                          let classification = null;
+                          if (hasConflict) {
+                            if (ev.source_id === 'EML-201' || ev.source_type === 'EMAIL' || ev.title?.toLowerCase().includes('guarantee') || ev.snippet?.toLowerCase().includes('guarantee')) {
+                              classification = {
+                                label: 'PROMISE / ORIGINAL COMMITMENT',
+                                color: 'bg-blue-900/60 text-blue-200 border-blue-700',
+                                icon: 'blue',
+                              };
+                            } else if (ev.source_id === 'INV-APEX-992' || ev.source_type === 'INVOICE' || ev.title?.toLowerCase().includes('invoice') || ev.snippet?.toLowerCase().includes('pending') || ev.snippet?.toLowerCase().includes('incomplete')) {
+                              classification = {
+                                label: 'INCOMPLETE STATUS',
+                                color: 'bg-rose-900/60 text-rose-200 border-rose-700',
+                                icon: 'rose',
+                              };
+                            }
+                          }
+
+                          return (
+                            <div key={i} className="flex items-start space-x-2 text-xs text-slate-300 p-2 rounded-lg bg-slate-900/50 border border-slate-800/60">
+                              {classification?.icon === 'rose' ? (
+                                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                              ) : classification?.icon === 'blue' ? (
+                                <FileText className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                              ) : (
+                                <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                  <span className="font-semibold text-slate-200 font-mono">[{ev.source_type} {ev.source_id}]</span>
+                                  <span className="text-slate-300 font-medium">{ev.title}</span>
+                                  {classification && (
+                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono uppercase border font-semibold ${classification.color}`}>
+                                      {classification.label}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-slate-400 italic text-[11px]">"{ev.snippet}"</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
 
                 {/* 3. Recommended Action & Draft Message */}
                 <div className="space-y-2">

@@ -481,3 +481,67 @@ async def test_frontend_cannot_mutate_protected_state(tmp_path):
             agent_name="FrontendUI",
             reason="User clicked resolve without VerificationGate.",
         )
+
+
+def test_apex_evidence_presentation_semantics_regression():
+    """
+    Regression test: Ensures UI DecisionSurface classifies conflicting evidence
+    accurately rather than claiming unconditional corroboration.
+    """
+    comp_path = Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "DecisionSurface.jsx"
+    assert comp_path.exists()
+    content = comp_path.read_text()
+
+    # Must NOT unconditionally render "CORROBORATING EVIDENCE ESTABLISHED"
+    assert "CORROBORATING EVIDENCE ESTABLISHED:" not in content
+
+    # Must conditionally render neutral evidence heading and contradiction alerts
+    assert "Evidence Sources Analyzed:" in content
+    assert "CROSS-SOURCE CONTRADICTION DETECTED" in content
+    assert "PROMISE / ORIGINAL COMMITMENT" in content
+    assert "INCOMPLETE STATUS" in content
+    assert "Analysis Confidence:" in content
+
+
+def test_telemetry_presentation_bounded_monitoring_semantics():
+    """
+    Regression test: Ensures Agent Telemetry log groups recurring verification attempts
+    under a bounded monitoring summary rather than presenting runaway loops.
+    """
+    timeline_path = Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "AgentTimeline.jsx"
+    assert timeline_path.exists()
+    content = timeline_path.read_text()
+
+    assert "VERIFICATION MONITORING" in content
+    assert "Bounded Autonomous Cycle" in content
+    assert "Awaiting counterparty response" in content
+    assert "earlier verification checks recorded" in content
+    assert "Bounded monitoring, not uncontrolled looping" in content
+
+
+def test_public_branding_semantics():
+    """
+    Regression test: Ensures prototype-like branding is replaced with production identity
+    without leaking AgentOS or framework kernel labels.
+    """
+    header_path = Path(__file__).resolve().parent.parent / "frontend" / "src" / "components" / "Header.jsx"
+    app_path = Path(__file__).resolve().parent.parent / "frontend" / "src" / "App.jsx"
+    assert header_path.exists()
+    assert app_path.exists()
+
+    header_content = header_path.read_text()
+    app_content = app_path.read_text()
+
+    # Must NOT contain prototype labels
+    assert "AGENT KERNEL V0.1" not in header_content
+    assert "Agent Kernel v0.1" not in app_content
+    assert "AgentOS" not in header_content
+    assert "AgentOS" not in app_content
+
+    # Must contain proper production product branding
+    assert (
+        "Commitment Intelligence &amp; Fulfillment Verification" in header_content
+        or "Commitment Intelligence & Fulfillment Verification" in header_content
+    )
+    assert "Powered by Strands Agents • Agents for Humans Hackathon" in app_content
+

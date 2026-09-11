@@ -136,7 +136,7 @@ export default function App() {
         {loading ? (
           <div className="py-24 text-center">
             <div className="inline-block w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-3 text-xs font-mono text-slate-400">Loading Covenant Agent Kernel...</p>
+            <p className="mt-3 text-xs font-mono text-slate-400">Loading Covenant Commitment Intelligence...</p>
           </div>
         ) : (
           <>
@@ -192,7 +192,7 @@ export default function App() {
             <strong className="text-slate-300">Ollama / Pluggable Local</strong>
           </div>
           <div>
-            <span>Strands Agent Kernel v0.1 — Agents for Humans Hackathon</span>
+            <span>Powered by Strands Agents • Agents for Humans Hackathon</span>
           </div>
         </div>
       </footer>

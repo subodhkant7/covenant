@@ -673,6 +673,11 @@ async def list_pending_decisions():
                 "confidence": c.confidence,
                 "evidence": [e.model_dump(mode="json") for e in c.evidence_references],
                 "action": c.next_action.model_dump(mode="json"),
+                "evidence_assessment": (
+                    c.evidence_assessment.model_dump(mode="json")
+                    if c.evidence_assessment
+                    else (c.metadata.get("evidence_assessment") if c.metadata else None)
+                ),
             })
     return decisions
 
