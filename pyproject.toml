@@ -25,9 +25,22 @@ dev = [
     "pytest-asyncio>=0.23.0",
 ]
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "covenant*",
+    "agent_runtime*",
+    "covenant_runtime_bridge*",
+]
+exclude = [
+    "frontend*",
+    "tests*",
+]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 pythonpath = ["."]
 asyncio_mode = "auto"
+

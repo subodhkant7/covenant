@@ -209,11 +209,11 @@ Covenant includes a realistic multi-source synthetic workspace for **Northstar S
 
 ## Documentation Index
 
-- [docs/ARCHITECTURE.md](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/docs/ARCHITECTURE.md): Comprehensive architecture, state machine specification, and runtime contracts.
-- [docs/hackathon-readiness.md](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/docs/hackathon-readiness.md): Submission compliance matrix mapped to official hackathon rules.
-- [docs/demo-script.md](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/docs/demo-script.md): 5-minute video walkthrough script with positive and negative verification flows.
-- [docs/DEMO_SCENARIOS.md](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/docs/DEMO_SCENARIOS.md): Detailed walkthrough of Northstar Studio demo scenarios.
-- [.env.example](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/.env.example): Exhaustive environment variable reference.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Comprehensive architecture, state machine specification, and runtime contracts.
+- [docs/hackathon-readiness.md](docs/hackathon-readiness.md): Submission compliance matrix mapped to official hackathon rules.
+- [docs/demo-script.md](docs/demo-script.md): 5-minute video walkthrough script with positive and negative verification flows.
+- [docs/DEMO_SCENARIOS.md](docs/DEMO_SCENARIOS.md): Detailed walkthrough of Northstar Studio demo scenarios.
+- [.env.example](.env.example): Exhaustive environment variable reference.
 
 ---
 
@@ -227,4 +227,4 @@ Covenant includes a realistic multi-source synthetic workspace for **Northstar S
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](file:///Users/urjasoft/Documents/AgentOS/projects/covenant/LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.

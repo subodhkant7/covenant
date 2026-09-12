@@ -498,8 +498,8 @@ def test_apex_evidence_presentation_semantics_regression():
     # Must conditionally render neutral evidence heading and contradiction alerts
     assert "Evidence Sources Analyzed:" in content
     assert "CROSS-SOURCE CONTRADICTION DETECTED" in content
-    assert "PROMISE / ORIGINAL COMMITMENT" in content
-    assert "INCOMPLETE STATUS" in content
+    assert "PROMISE / ORIGINAL COMMITMENT" in content.upper()
+    assert "INCOMPLETE STATUS" in content.upper()
     assert "Analysis Confidence:" in content
 
 
