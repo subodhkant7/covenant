@@ -14,7 +14,8 @@ import {
   triggerSeed,
   approveDecision,
   rejectDecision,
-  triggerVerification
+  triggerVerification,
+  simulateReply
 } from './services/api';
 
 export default function App() {
