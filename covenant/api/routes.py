@@ -1151,6 +1151,7 @@ async def reseed_database():
             conn.execute("DELETE FROM commitments")
             conn.execute("DELETE FROM monitoring_cycles")
     await asyncio.to_thread(_clear)
+    workspace_store.reset()
     await repo.initialize()
     ctx = AgentContext(session_id="seed_initialization")
     result = await supervisor.run(ctx)

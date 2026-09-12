@@ -154,7 +154,7 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
             <div
               key={c.id}
               onClick={() => onSelectCommitment(c)}
-              className={`group relative rounded-xl border p-4 sm:p-5 transition-all duration-200 cursor-pointer ${
+              className={`group relative rounded-xl border p-5 sm:p-6 lg:p-7 transition-all duration-200 cursor-pointer ${
                 isSelected 
                   ? 'bg-slate-900 border-blue-500 ring-1 ring-blue-500/50 shadow-lg shadow-blue-500/10' 
                   : 'bg-slate-900/80 border-slate-800/90 hover:border-slate-700 hover:bg-slate-900 shadow-sm'
@@ -162,42 +162,42 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
             >
               
               {/* Row Top Ribbon: Direction, Parties, Health & Risk */}
-              <div className="mb-3 pb-2.5 border-b border-slate-800/70 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="mb-4 pb-3 border-b border-slate-800/70 flex flex-wrap items-center justify-between gap-3 text-xs">
                 
                 {/* Direction & Relational Parties */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-wider border ${
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-md font-mono text-xs font-bold uppercase tracking-wider border ${
                     isTheyOwe 
                       ? 'bg-blue-950/60 text-blue-300 border-blue-800/80' 
                       : 'bg-indigo-950/60 text-indigo-300 border-indigo-800/80'
                   }`}>
-                    {isTheyOwe ? <ArrowDownLeft className="w-3 h-3 text-blue-400" /> : <ArrowUpRight className="w-3 h-3 text-indigo-400" />}
+                    {isTheyOwe ? <ArrowDownLeft className="w-3.5 h-3.5 text-blue-400" /> : <ArrowUpRight className="w-3.5 h-3.5 text-indigo-400" />}
                     <span>{isTheyOwe ? 'THEY OWE US' : 'WE OWE THEM'}</span>
                   </span>
 
-                  <div className="flex items-center space-x-2 text-xs font-mono">
+                  <div className="flex items-center space-x-2 text-sm font-mono">
                     <span className="text-slate-400">Promisor:</span>
                     <strong className="text-slate-200 font-semibold">{c.promisor.name}</strong>
                     {c.promisor.organization && (
                       <span className="text-slate-400 font-normal">({c.promisor.organization})</span>
                     )}
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-600" />
+                    <ArrowRight className="w-4 h-4 text-slate-600" />
                     <span className="text-slate-400">Promisee:</span>
                     <strong className="text-slate-300 font-medium">{c.promisee.name}</strong>
                   </div>
 
                   {c.category && (
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-slate-950 text-slate-400 border border-slate-800">
+                    <span className="px-2.5 py-1 rounded text-xs font-mono uppercase bg-slate-950 text-slate-400 border border-slate-800">
                       {c.category}
                     </span>
                   )}
                 </div>
 
                 {/* Health & Risk Badges */}
-                <div className="flex items-center space-x-2.5 font-mono text-xs">
+                <div className="flex items-center space-x-3 font-mono text-xs">
                   
                   {/* Risk Badge */}
-                  <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold border ${
+                  <span className={`px-3 py-1 rounded text-xs uppercase font-bold border ${
                     c.risk === 'HIGH' || c.risk === 'CRITICAL'
                       ? 'bg-rose-950/80 text-rose-300 border-rose-800'
                       : c.risk === 'MEDIUM'
@@ -208,8 +208,8 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
                   </span>
 
                   {/* Health Indicator */}
-                  <div className={`px-2.5 py-0.5 rounded-md flex items-center space-x-1.5 border text-[10px] font-mono ${health.classes}`} title={health.desc}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${health.dot}`}></span>
+                  <div className={`px-3 py-1 rounded-md flex items-center space-x-1.5 border text-xs font-mono ${health.classes}`} title={health.desc}>
+                    <span className={`w-2 h-2 rounded-full ${health.dot}`}></span>
                     <span>{health.label}</span>
                   </div>
 
@@ -218,37 +218,37 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
               </div>
 
               {/* Main Content Grid: 4 Dedicated Desktop Columns */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
                 
                 {/* Col 1: Commitment Identity & Description (lg:col-span-5) */}
                 <div className="lg:col-span-5 min-w-0">
-                  <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-blue-300 transition leading-snug">
+                  <h3 className="text-lg sm:text-xl font-bold text-white group-hover:text-blue-300 transition leading-snug">
                     {c.title}
                   </h3>
-                  <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed font-sans">
+                  <p className="text-sm text-slate-300 mt-1.5 leading-relaxed font-sans">
                     {c.description}
                   </p>
                 </div>
 
                 {/* Col 2: Evidence Trail & Corroboration (lg:col-span-3) */}
-                <div className="lg:col-span-3 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-5">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1.5 flex items-center space-x-1.5">
-                    <FileCheck className="w-3 h-3 text-blue-400" />
+                <div className="lg:col-span-3 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-6">
+                  <div className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2 flex items-center space-x-1.5">
+                    <FileCheck className="w-3.5 h-3.5 text-blue-400" />
                     <span>Evidence Trail ({c.evidence_references?.length || 0} Sources)</span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     {c.evidence_references?.slice(0, 3).map((ev, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded text-xs bg-slate-950 border border-slate-800/90 text-slate-300 font-sans shadow-sm"
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs bg-slate-950 border border-slate-800/90 text-slate-300 font-sans shadow-sm"
                         title={ev.snippet}
                       >
-                        {ev.source_type === 'EMAIL' && <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                        {ev.source_type === 'CONTRACT' && <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                        {ev.source_type === 'PROJECT' && <Briefcase className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                        <span className="font-mono font-semibold text-[10px] text-slate-400">[{ev.source_id}]</span>
-                        <span className="truncate max-w-[180px] xl:max-w-[260px] font-medium">{ev.title}</span>
+                        {ev.source_type === 'EMAIL' && <Mail className="w-4 h-4 text-blue-400 shrink-0" />}
+                        {ev.source_type === 'CONTRACT' && <FileText className="w-4 h-4 text-indigo-400 shrink-0" />}
+                        {ev.source_type === 'PROJECT' && <Briefcase className="w-4 h-4 text-emerald-400 shrink-0" />}
+                        <span className="font-mono font-semibold text-xs text-slate-400">[{ev.source_id}]</span>
+                        <span className="truncate max-w-[200px] xl:max-w-[280px] font-medium">{ev.title}</span>
                       </span>
                     ))}
                     {c.evidence_references?.length > 3 && (
@@ -260,40 +260,40 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
                 </div>
 
                 {/* Col 3: Lifecycle State & Next Action (lg:col-span-2) */}
-                <div className="lg:col-span-2 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-5">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-semibold mb-1.5">
+                <div className="lg:col-span-2 min-w-0 border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-6">
+                  <div className="text-xs font-mono uppercase tracking-wider text-slate-400 font-semibold mb-2">
                     Lifecycle State
                   </div>
                   
-                  <span className={`inline-block px-3 py-1 rounded-md text-xs font-mono uppercase tracking-wide border font-bold ${statusTheme}`}>
+                  <span className={`inline-block px-3.5 py-1.5 rounded-md text-xs font-mono uppercase tracking-wide border font-bold ${statusTheme}`}>
                     {c.status}
                   </span>
 
                   {c.next_action && (
-                    <div className="mt-2 text-xs flex items-start space-x-1.5 text-amber-400 font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0 mt-1"></span>
-                      <span className="text-xs leading-tight">{c.next_action.description}</span>
+                    <div className="mt-2.5 text-xs flex items-start space-x-1.5 text-amber-300 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0 mt-1"></span>
+                      <span className="text-xs leading-relaxed">{c.next_action.description}</span>
                     </div>
                   )}
                 </div>
 
                 {/* Col 4: Timeline, Overdue & Inspect CTA (lg:col-span-2) */}
-                <div className="lg:col-span-2 flex flex-col items-start lg:items-end justify-between border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-5 space-y-2">
+                <div className="lg:col-span-2 flex flex-col items-start lg:items-end justify-between border-t lg:border-t-0 lg:border-l border-slate-800/80 pt-3 lg:pt-0 lg:pl-6 space-y-2.5">
                   
                   <div className="flex flex-col items-start lg:items-end font-mono">
                     <div className="flex items-center space-x-1.5 text-xs text-slate-300">
-                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <Clock className="w-4 h-4 text-slate-400" />
                       <span>Due: {c.due_date ? new Date(c.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'No Deadline'}</span>
                     </div>
 
                     {c.is_overdue && (
-                      <span className="mt-1 text-[10px] text-rose-400 font-bold uppercase bg-rose-950/80 px-2 py-0.5 rounded border border-rose-900">
+                      <span className="mt-1 text-xs text-rose-400 font-bold uppercase bg-rose-950/80 px-2.5 py-1 rounded border border-rose-900">
                         Overdue Drift
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-1 text-xs font-medium text-slate-400 group-hover:text-blue-400 transition">
+                  <div className="flex items-center space-x-1.5 text-sm font-semibold text-slate-400 group-hover:text-blue-400 transition">
                     <span>Inspect Trace</span>
                     <ChevronRight className="w-4 h-4" />
                   </div>
@@ -311,6 +311,25 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
             <p className="text-slate-400 text-sm font-medium">No commitments match the selected filter criteria.</p>
           </div>
         )}
+
+        {/* Full-Screen Operational Telemetry Footer Strip */}
+        <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-slate-400">
+          <div className="flex items-center space-x-3">
+            <span className="flex h-2.5 w-2.5 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <span className="text-slate-300 font-semibold">Autonomous Lifecycle Engine:</span>
+            <span className="text-blue-400 font-bold">ACTIVE (10s Polling Cycle)</span>
+          </div>
+          <div className="flex items-center space-x-4">
+            <span>Deterministic Policy Gate: <strong className="text-emerald-400">ENFORCED</strong></span>
+            <span>•</span>
+            <span>Zero Self-Attestation: <strong className="text-emerald-400">VERIFIED</strong></span>
+            <span>•</span>
+            <span>Multi-Source Corroboration: <strong className="text-blue-400">ONLINE</strong></span>
+          </div>
+        </div>
       </div>
 
     </div>

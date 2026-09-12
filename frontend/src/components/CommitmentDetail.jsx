@@ -173,47 +173,50 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
   const statusBadge = getStatusBadge(currentState);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden flex justify-end">
-      {/* Backdrop Blur Overlay */}
-      <div 
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
-      
-      {/* Expanded Enterprise Inspector Drawer */}
-      <div className="relative w-full max-w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-[1550px] bg-[#0b0f17] border-l border-slate-800 shadow-2xl overflow-y-auto flex flex-col font-sans z-10">
+    <div className="fixed inset-0 z-50 bg-[#090d12] overflow-y-auto flex flex-col font-sans">
+      <div className="w-full flex-1 flex flex-col font-sans">
       
       {/* Header Bar */}
-      <div className="p-5 border-b border-slate-800 bg-[#0d131d]/95 backdrop-blur sticky top-0 z-20 flex items-start justify-between gap-4">
-        <div className="space-y-1.5 flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">
-              {commitment.category}
-            </span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono uppercase border flex items-center space-x-1.5 font-bold ${statusBadge.bg}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${statusBadge.dot}`} />
-              <span>{statusBadge.label}</span>
-            </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-slate-800 text-slate-300 border border-slate-700">
-              Risk: <strong className={currentRisk === 'HIGH' || currentRisk === 'CRITICAL' ? 'text-rose-400' : 'text-amber-400'}>{currentRisk}</strong>
-            </span>
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-slate-800/80 text-slate-400 border border-slate-700/80">
-              Commitment Health: {health === 'RECOVERING' ? 'RECOVERY IN PROGRESS' : (health ? health.replace('_', ' ') : 'STABLE')}
-            </span>
-          </div>
-          <h2 className="text-base font-bold text-white leading-snug break-words">
-            {commitment.title}
-          </h2>
-          <div className="text-[11px] text-slate-400 flex items-center space-x-2">
-            <span>Promisee: <strong className="text-slate-300">{commitment.promisee?.name}</strong></span>
-            <span>•</span>
-            <span>Promisor: <strong className="text-slate-300">{commitment.promisor?.name}</strong></span>
+      <div className="px-6 py-4 sm:px-8 sm:py-5 border-b border-slate-800 bg-[#0d131d]/95 backdrop-blur sticky top-0 z-20 flex items-center justify-between gap-4">
+        <div className="flex items-center space-x-4 flex-1 min-w-0">
+          <button
+            onClick={onClose}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition font-mono text-xs cursor-pointer shrink-0 border border-slate-700"
+            title="Return to Operational Map"
+          >
+            <span>← Back to Map</span>
+          </button>
+
+          <div className="space-y-1 flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded text-xs font-mono uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">
+                {commitment.category}
+              </span>
+              <span className={`px-3 py-0.5 rounded-full text-xs font-mono uppercase border flex items-center space-x-1.5 font-bold ${statusBadge.bg}`}>
+                <span className={`w-2 h-2 rounded-full ${statusBadge.dot}`} />
+                <span>{statusBadge.label}</span>
+              </span>
+              <span className="px-2.5 py-0.5 rounded text-xs font-mono uppercase bg-slate-800 text-slate-300 border border-slate-700">
+                Risk: <strong className={currentRisk === 'HIGH' || currentRisk === 'CRITICAL' ? 'text-rose-400' : 'text-amber-400'}>{currentRisk}</strong>
+              </span>
+              <span className="px-2.5 py-0.5 rounded text-xs font-mono uppercase bg-slate-800/80 text-slate-400 border border-slate-700/80">
+                Commitment Health: {health === 'RECOVERING' ? 'RECOVERY IN PROGRESS' : (health ? health.replace('_', ' ') : 'STABLE')}
+              </span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-bold text-white leading-snug break-words">
+              {commitment.title}
+            </h2>
+            <div className="text-xs text-slate-400 flex items-center space-x-2">
+              <span>Promisee: <strong className="text-slate-300">{commitment.promisee?.name}</strong></span>
+              <span>•</span>
+              <span>Promisor: <strong className="text-slate-300">{commitment.promisor?.name}</strong></span>
+            </div>
           </div>
         </div>
 
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer shrink-0"
+          className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition cursor-pointer shrink-0 border border-slate-700"
           title="Close trace view"
         >
           <X className="w-5 h-5" />
@@ -221,7 +224,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-800 bg-[#0d121b] px-6 text-xs font-mono">
+      <div className="flex border-b border-slate-800 bg-[#0d121b] px-6 sm:px-8 text-xs font-mono">
         <button
           onClick={() => setActiveViewTab('trace')}
           className={`py-3 px-3 border-b-2 font-medium flex items-center space-x-2 transition cursor-pointer ${
@@ -258,7 +261,7 @@ export default function CommitmentDetail({ commitment, onClose, onVerify, onSimu
       </div>
 
       {/* Content Body */}
-      <div className="p-6 space-y-6 flex-1 text-xs">
+      <div className="px-6 py-6 sm:px-8 sm:py-8 space-y-6 flex-1 text-sm">
 
         {loadingTrace && (
           <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-center space-y-2">
