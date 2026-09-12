@@ -135,8 +135,9 @@ class VerificationAgent(BaseAgent):
             is_rejection_signal = (
                 context.parameters.get("simulated_rejection")
                 or context.parameters.get("mark_failed")
-                or "rejected" in rationale.lower()
+                or "explicitly rejected" in rationale.lower()
                 or "disputed" in rationale.lower()
+                or "withheld approval" in rationale.lower()
                 or "withheld" in rationale.lower()
             )
             if is_rejection_signal:

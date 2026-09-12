@@ -286,7 +286,7 @@ class VerifyCommitmentTool(BaseTool):
                     is_verified = False
                     rationale = (
                         f"Candidate approval artifact pre-dates action execution timestamp "
-                        f"(stale evidence {stale_emails[0]['id']} rejected). Awaiting fresh counterparty verification."
+                        f"(stale evidence {stale_emails[0]['id']} disregarded as pre-dating execution). Awaiting fresh counterparty verification."
                     )
                 else:
                     is_verified = False
