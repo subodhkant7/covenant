@@ -132,7 +132,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="w-full max-w-[2600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-6 flex-1">
+      <main className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-5 flex-1">
         {loading ? (
           <div className="py-24 text-center">
             <div className="inline-block w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
@@ -180,7 +180,7 @@ export default function App() {
 
       {/* Bottom Footer / Status Line */}
       <footer className="border-t border-slate-800/80 bg-[#0d121a] py-3 text-[11px] font-mono text-slate-400">
-        <div className="w-full max-w-[2600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
             <span>Workspace: </span>
             <strong className="text-slate-300">Northstar Studio LLC</strong>

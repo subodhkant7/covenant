@@ -25,7 +25,7 @@ export default function Header({
     <header className="border-b border-slate-800 bg-[#0d121a]/95 backdrop-blur-md sticky top-0 z-40">
       
       {/* 1. Brand & Controls Row */}
-      <div className="w-full max-w-[2600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800/60">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800/60">
         
         {/* Brand & Tagline */}
         <div className="flex items-center space-x-3.5">
@@ -81,7 +81,7 @@ export default function Header({
       {/* 2. Executive KPI Strip (Immediately Below Top Bar) */}
       {stats && (
         <div className="bg-slate-950/40 border-b border-slate-800/50 py-2">
-          <div className="w-full max-w-[2600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 flex flex-wrap items-center justify-between gap-3 text-xs">
             
             {/* Core Metrics */}
             <div className="flex flex-wrap items-center gap-2.5">
@@ -154,7 +154,7 @@ export default function Header({
       )}
 
       {/* 3. Navigation Tabs */}
-      <div className="w-full max-w-[2600px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 flex space-x-8 text-xs font-medium overflow-x-auto">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-10 flex space-x-8 text-xs font-medium overflow-x-auto">
         <button
           onClick={() => setActiveTab('map')}
           className={`py-3 border-b-2 flex items-center space-x-2 transition cursor-pointer ${

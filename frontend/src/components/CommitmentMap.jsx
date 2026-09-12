@@ -222,10 +222,10 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
                 
                 {/* Col 1: Commitment Identity & Description (lg:col-span-5) */}
                 <div className="lg:col-span-5 min-w-0">
-                  <h3 className="text-sm sm:text-base font-semibold text-white group-hover:text-blue-300 transition leading-snug">
+                  <h3 className="text-base sm:text-lg font-bold text-white group-hover:text-blue-300 transition leading-snug">
                     {c.title}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed font-sans">
+                  <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed font-sans">
                     {c.description}
                   </p>
                 </div>
@@ -241,18 +241,18 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
                     {c.evidence_references?.slice(0, 3).map((ev, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] bg-slate-950 border border-slate-800/90 text-slate-300 font-sans"
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded text-xs bg-slate-950 border border-slate-800/90 text-slate-300 font-sans shadow-sm"
                         title={ev.snippet}
                       >
-                        {ev.source_type === 'EMAIL' && <Mail className="w-3 h-3 text-blue-400 shrink-0" />}
-                        {ev.source_type === 'CONTRACT' && <FileText className="w-3 h-3 text-indigo-400 shrink-0" />}
-                        {ev.source_type === 'PROJECT' && <Briefcase className="w-3 h-3 text-emerald-400 shrink-0" />}
+                        {ev.source_type === 'EMAIL' && <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                        {ev.source_type === 'CONTRACT' && <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
+                        {ev.source_type === 'PROJECT' && <Briefcase className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                         <span className="font-mono font-semibold text-[10px] text-slate-400">[{ev.source_id}]</span>
-                        <span className="truncate max-w-[120px]">{ev.title}</span>
+                        <span className="truncate max-w-[180px] xl:max-w-[260px] font-medium">{ev.title}</span>
                       </span>
                     ))}
                     {c.evidence_references?.length > 3 && (
-                      <span className="text-[11px] text-slate-400 font-mono px-1">
+                      <span className="text-xs text-slate-400 font-mono px-1 font-semibold">
                         +{c.evidence_references.length - 3} more
                       </span>
                     )}
@@ -265,14 +265,14 @@ export default function CommitmentMap({ commitments, onSelectCommitment, selecte
                     Lifecycle State
                   </div>
                   
-                  <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-mono uppercase tracking-wide border font-bold ${statusTheme}`}>
+                  <span className={`inline-block px-3 py-1 rounded-md text-xs font-mono uppercase tracking-wide border font-bold ${statusTheme}`}>
                     {c.status}
                   </span>
 
                   {c.next_action && (
-                    <div className="mt-2 text-xs flex items-center space-x-1.5 text-amber-400 font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0"></span>
-                      <span className="truncate text-[11px]">{c.next_action.description}</span>
+                    <div className="mt-2 text-xs flex items-start space-x-1.5 text-amber-400 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0 mt-1"></span>
+                      <span className="text-xs leading-tight">{c.next_action.description}</span>
                     </div>
                   )}
                 </div>
