@@ -278,6 +278,8 @@ Covenant includes a realistic multi-source synthetic workspace for **Northstar S
 - **Deterministic Benchmark**: The 43-scenario evaluation suite is a deterministic engineering and governance regression benchmark over synthetic enterprise scenarios, not an open-ended scientific evaluation of unrestricted frontier LLMs.
 - **Domain Scope**: The scenarios cover core enterprise commitments (consulting deliverables, vendor equipment repair, material shipments, invoices). Extending to novel domains requires configuring domain-specific verifiers and policy rules.
 - **AWS Bedrock Availability**: The Amazon Bedrock Strands provider is fully implemented and tested. In environments where AWS account-level model access is restricted, the runtime operates safely offline via the deterministic or Ollama providers without loss of governance invariants.
+- **Simulation Endpoint Security**: Synthetic counterparty injection routes (`/api/simulate/*`) used for demo and adversarial evaluation are protected by a dedicated server-side secret (`COVENANT_SIMULATION_TOKEN` via `X-Simulation-Token` header) with constant-time verification. Normal read/demo APIs remain unauthenticated, and production secrets must never be committed.
+
 
 ---
 

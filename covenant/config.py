@@ -13,7 +13,7 @@ SYNTHETIC_DATA_DIR = PROJECT_ROOT / "covenant" / "synthetic_data"
 class Settings(BaseModel):
     """Application runtime configuration."""
     app_name: str = "Covenant"
-    environment: str = "local"
+    environment: str = Field(default_factory=lambda: os.getenv("COVENANT_ENV", os.getenv("ENVIRONMENT", "local")).lower())
     database_url: str = Field(default_factory=lambda: f"sqlite:///{DEFAULT_DB_PATH}")
     db_path: Path = DEFAULT_DB_PATH
     ollama_base_url: str = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
@@ -42,6 +42,12 @@ class Settings(BaseModel):
     gemini_temperature: float = Field(default_factory=lambda: float(os.getenv("COVENANT_GEMINI_TEMPERATURE", "0.1")))
     gemini_max_tokens: Optional[int] = Field(default_factory=lambda: int(os.getenv("COVENANT_GEMINI_MAX_TOKENS")) if os.getenv("COVENANT_GEMINI_MAX_TOKENS") else None)
 
+    # Simulation & Demo Security
+    simulation_token: Optional[str] = Field(default_factory=lambda: os.getenv("COVENANT_SIMULATION_TOKEN"))
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment in ("production", "prod", "live")
+
 
 settings = Settings()
-

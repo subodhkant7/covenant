@@ -4,7 +4,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from agent_runtime.core.contracts.agent import AgentRun
@@ -28,6 +28,7 @@ from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
 from covenant.tools import initialize_tools
 from covenant_runtime_bridge.bootstrap import CovenantRuntimeBootstrap, CovenantRuntimeEnvironment
+from covenant.api.auth import verify_simulation_token
 
 router = APIRouter(prefix="/api")
 
@@ -984,7 +985,7 @@ async def approve_decision(action_id: str, req: DecisionActionRequest):
 
 
 
-@router.post("/simulate/reply/{commitment_id}")
+@router.post("/simulate/reply/{commitment_id}", dependencies=[Depends(verify_simulation_token)])
 async def simulate_external_reply(commitment_id: str, req: Optional[SimulateReplyRequest] = None):
     """
     'World Changes' Demo Mechanism:

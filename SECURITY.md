@@ -34,6 +34,8 @@ Covenant is built with strict runtime governance separating agentic intelligence
 2. **Policy Invariants**: High-risk or destructive actions (such as counterparty outreach or contractual breach notices) are non-bypassably gated behind human approval (`HumanApprovalRequest`).
 3. **Execution is Not Fulfillment**: Completing an outbound action (e.g. sending an email or dispatching an API call) does not mark a commitment as resolved. Resolution strictly requires independent counterparty proof timestamped *after* action dispatch ($T_{\text{proof}} > T_{\text{exec}}$).
 4. **Sanitization**: Inbound external evidence and tool parameters are sanitized to prevent secret leaks, shell injection, or prompt injection from altering policy evaluations.
+5. **Simulation Endpoint Protection**: Counterparty event simulation routes (`/api/simulate/*`) used for demo and test evaluation are protected by a dedicated server-side secret (`COVENANT_SIMULATION_TOKEN`) passed via the `X-Simulation-Token` header with constant-time verification. Normal read/demo APIs remain accessible, and production secrets must never be committed.
+
 
 ---
 
