@@ -26,6 +26,8 @@ async def test_health_endpoint_intact():
 @pytest.mark.asyncio
 async def test_api_stats_endpoint_intact():
     """Verify normal API endpoints under /api continue to function."""
+    from covenant.api.routes import repo
+    await repo.initialize()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/stats")
