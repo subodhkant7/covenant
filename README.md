@@ -183,7 +183,7 @@ pytest -o asyncio_mode=auto -q tests/test_agentic_benchmark.py tests/test_advers
 uvicorn covenant.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-> **Verified Test Status**: At the time of this submission, the regression suite reports **153 passed, 0 failures** (including 43 evaluation/adversarial benchmark scenarios and container readiness verification).
+> **Verified Test Status**: At the time of this submission, the regression suite reports **158 passed, 0 failures** (including 43 evaluation/adversarial benchmark scenarios, private reasoning safety tests, and container readiness verification).
 
 
 ### 4. Frontend Setup

@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 import httpx
+import uuid
 
 from strands import Agent, tool
 from strands.models.model import Model
@@ -33,6 +34,7 @@ from covenant.domain.models import (
 from covenant.persistence.repository import AbstractCommitmentRepository, AbstractEventRepository
 from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
+from covenant.llm.provider import strip_private_reasoning_text, sanitize_model_payload
 
 logger = logging.getLogger(__name__)
 
@@ -270,48 +272,153 @@ class OllamaStrandsModel(Model):
         if system_prompt:
             ollama_messages.append({"role": "system", "content": system_prompt})
         for m in messages:
+            role = m.get("role", "user")
             content = m.get("content", "")
-            if isinstance(content, list) and content:
-                content = content[0].get("text", "")
-            ollama_messages.append({"role": m.get("role", "user"), "content": str(content)})
+            if isinstance(content, str):
+                ollama_messages.append({"role": role, "content": content})
+            elif isinstance(content, list):
+                tool_results = [c["toolResult"] for c in content if isinstance(c, dict) and "toolResult" in c]
+                tool_uses = [c["toolUse"] for c in content if isinstance(c, dict) and "toolUse" in c]
+                text_parts = [c["text"] for c in content if isinstance(c, dict) and "text" in c]
+
+                if tool_results:
+                    for tr in tool_results:
+                        tr_c = tr.get("content", [])
+                        tr_text = ""
+                        if isinstance(tr_c, list) and tr_c:
+                            tr_text = tr_c[0].get("text", "")
+                        elif isinstance(tr_c, str):
+                            tr_text = tr_c
+                        else:
+                            tr_text = json.dumps(tr_c)
+                        ollama_messages.append({"role": "tool", "content": tr_text})
+                elif tool_uses:
+                    tc_list = []
+                    for tu in tool_uses:
+                        inp = tu.get("input", {})
+                        if isinstance(inp, str):
+                            try:
+                                inp = json.loads(inp)
+                            except Exception:
+                                pass
+                        tc_list.append({"function": {"name": tu.get("name"), "arguments": inp}})
+                    msg_dict = {"role": "assistant", "content": " ".join(text_parts)}
+                    if tc_list:
+                        msg_dict["tool_calls"] = tc_list
+                    ollama_messages.append(msg_dict)
+                else:
+                    ollama_messages.append({"role": role, "content": " ".join(text_parts)})
+
+        # Convert Strands tool_specs to Ollama function tool format
+        ollama_tools = None
+        if tool_specs:
+            ollama_tools = []
+            for spec in tool_specs:
+                ollama_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": spec.get("name"),
+                        "description": spec.get("description", ""),
+                        "parameters": spec.get("inputSchema", {}).get("json", {}),
+                    }
+                })
 
         candidates = self.candidate_models
-        streamed_success = False
 
         for idx, model in enumerate(candidates):
-            payload = {
+            payload: Dict[str, Any] = {
                 "model": model,
                 "messages": ollama_messages,
-                "stream": True,
             }
+            if ollama_tools:
+                payload["tools"] = ollama_tools
+                payload["stream"] = False
+            else:
+                payload["stream"] = True
+
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
-                        if response.status_code != 200:
-                            logger.warning(f"Ollama model {model} returned HTTP {response.status_code}. Trying next candidate.")
+                    if ollama_tools:
+                        # Non-streaming call when tools are enabled for reliable tool call schema parsing
+                        res = await client.post(f"{self.base_url}/api/chat", json=payload)
+                        if res.status_code != 200:
+                            logger.warning(f"Ollama model {model} returned HTTP {res.status_code}. Trying next candidate.")
+                            continue
+                        data = res.json()
+                        if "error" in data:
+                            logger.warning(f"Ollama model {model} reported error: {data['error']}. Trying fallback.")
                             continue
 
-                        got_any_text = False
-                        async for line in response.aiter_lines():
-                            if not line:
-                                continue
-                            chunk = json.loads(line)
-                            if "error" in chunk:
-                                logger.warning(f"Ollama model {model} reported error: {chunk['error']}. Trying fallback.")
-                                break
-                            text = chunk.get("message", {}).get("content", "")
-                            if text:
-                                got_any_text = True
-                                yield {"contentBlockDelta": {"delta": {"text": text}}}
-                            if chunk.get("done", False):
-                                yield {"messageStop": {"stopReason": "end_turn"}}
-                                streamed_success = True
-                                return
-                        if got_any_text:
-                            streamed_success = True
+                        msg = data.get("message", {})
+                        tool_calls = msg.get("tool_calls", [])
+                        if tool_calls:
+                            for c_idx, tc in enumerate(tool_calls):
+                                fn = tc.get("function", {})
+                                fn_name = fn.get("name")
+                                args = fn.get("arguments", {})
+                                if not isinstance(args, str):
+                                    args = json.dumps(args)
+                                tool_use_id = f"tooluse_{uuid.uuid4().hex[:8]}"
+                                yield {
+                                    "contentBlockStart": {
+                                        "contentBlockIndex": c_idx,
+                                        "start": {
+                                            "toolUse": {
+                                                "name": fn_name,
+                                                "toolUseId": tool_use_id,
+                                            }
+                                        }
+                                    }
+                                }
+                                yield {
+                                    "contentBlockDelta": {
+                                        "contentBlockIndex": c_idx,
+                                        "delta": {
+                                            "toolUse": {
+                                                "input": args,
+                                            }
+                                        }
+                                    }
+                                }
+                                yield {"contentBlockStop": {"contentBlockIndex": c_idx}}
+                            yield {"messageStop": {"stopReason": "tool_use"}}
                             return
+                        else:
+                            content_text = strip_private_reasoning_text(msg.get("content", ""))
+                            if content_text:
+                                yield {"contentBlockDelta": {"delta": {"text": content_text}}}
+                            yield {"messageStop": {"stopReason": "end_turn"}}
+                            return
+                    else:
+                        # Streaming call for regular text generation
+                        async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                            if response.status_code != 200:
+                                logger.warning(f"Ollama model {model} returned HTTP {response.status_code}. Trying next candidate.")
+                                continue
+
+                            got_any_text = False
+                            async for line in response.aiter_lines():
+                                if not line:
+                                    continue
+                                chunk = json.loads(line)
+                                if "error" in chunk:
+                                    logger.warning(f"Ollama model {model} reported error: {chunk['error']}. Trying fallback.")
+                                    break
+                                msg_chunk = chunk.get("message", {})
+                                # Discard any thinking tokens immediately
+                                if "thinking" in msg_chunk or "thought" in msg_chunk:
+                                    continue
+                                text = strip_private_reasoning_text(msg_chunk.get("content", ""))
+                                if text:
+                                    got_any_text = True
+                                    yield {"contentBlockDelta": {"delta": {"text": text}}}
+                                if chunk.get("done", False):
+                                    yield {"messageStop": {"stopReason": "end_turn"}}
+                                    return
+                            if got_any_text:
+                                return
             except Exception as e:
-                logger.error(f"Error streaming from Ollama model {model}: {e}")
+                logger.error(f"Error calling Ollama model {model}: {e}")
 
         # Fallback to local deterministic reasoning if all cloud/local models fail
         logger.warning("All Ollama models failed or require subscription credits. Streaming deterministic fallback reasoning.")

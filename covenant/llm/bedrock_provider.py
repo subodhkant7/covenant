@@ -104,6 +104,7 @@ class BedrockModelProvider(AbstractModelProvider):
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
+        schema: Optional[Any] = None,
     ) -> LLMResponse:
         """
         Send messages to Bedrock through native Strands BedrockModel.

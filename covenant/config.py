@@ -19,7 +19,7 @@ class Settings(BaseModel):
     ollama_base_url: str = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
     ollama_model: str = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_MODEL", "minimax-m3:cloud"))
     ollama_fallback_model: str = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_FALLBACK_MODEL", "glm-5.2:cloud"))
-    ollama_secondary_fallback_model: str = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_SECONDARY_FALLBACK_MODEL", "glm-4.7:cloud"))
+    ollama_secondary_fallback_model: Optional[str] = Field(default_factory=lambda: os.getenv("COVENANT_OLLAMA_SECONDARY_FALLBACK_MODEL"))
     system_user_org: str = "Northstar Studio"
     system_user_name: str = "Alex North"
     system_user_email: str = "alex@northstarstudio.com"

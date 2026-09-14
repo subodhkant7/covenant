@@ -5,7 +5,13 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from covenant.config import settings
-from covenant.llm.provider import AbstractModelProvider, ChatMessage, LLMResponse
+from covenant.llm.provider import (
+    AbstractModelProvider,
+    ChatMessage,
+    LLMResponse,
+    sanitize_model_payload,
+    strip_private_reasoning_text,
+)
 
 
 class OllamaModelProvider(AbstractModelProvider):
@@ -93,8 +99,9 @@ class OllamaModelProvider(AbstractModelProvider):
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
+        schema: Optional[Any] = None,
     ) -> LLMResponse:
-        """Execute chat completion via Ollama /api/chat with ordered model failover."""
+        """Execute chat completion via Ollama /api/chat with ordered model failover and deterministic output sanitization."""
         candidates = self.candidate_models
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -107,7 +114,14 @@ class OllamaModelProvider(AbstractModelProvider):
                         "temperature": temperature,
                     },
                 }
-                if json_mode:
+                if schema is not None:
+                    if hasattr(schema, "model_json_schema"):
+                        payload["format"] = schema.model_json_schema()
+                    elif isinstance(schema, dict):
+                        payload["format"] = schema
+                    else:
+                        payload["format"] = "json"
+                elif json_mode:
                     payload["format"] = "json"
 
                 try:
@@ -118,17 +132,23 @@ class OllamaModelProvider(AbstractModelProvider):
                             self._record_fallback(model, data["error"], candidates, idx)
                             continue
 
-                        msg_content = data.get("message", {}).get("content", "")
+                        raw_content = data.get("message", {}).get("content", "")
+                        # Deterministically strip any internal thinking/chain-of-thought tokens
+                        msg_content = strip_private_reasoning_text(raw_content)
+
                         if not msg_content and not data.get("message", {}).get("tool_calls"):
                             self._record_fallback(model, "empty response content", candidates, idx)
                             continue
+
+                        # Clean raw_response of any internal thinking/thought structures
+                        clean_raw = sanitize_model_payload(data)
 
                         return LLMResponse(
                             content=msg_content,
                             model_name=model,
                             prompt_tokens=data.get("prompt_eval_count"),
                             completion_tokens=data.get("eval_count"),
-                            raw_response=data,
+                            raw_response=clean_raw,
                         )
                     else:
                         self._record_fallback(model, f"HTTP {res.status_code}: {res.text[:100]}", candidates, idx)
@@ -142,6 +162,7 @@ class OllamaModelProvider(AbstractModelProvider):
             temperature=temperature,
             max_tokens=max_tokens,
             json_mode=json_mode,
+            schema=schema,
         )
         det_response.model_name = f"ollama-fallback:{self.model_name}->{det_response.model_name}"
         return det_response
@@ -165,6 +186,7 @@ class DeterministicFallbackProvider(AbstractModelProvider):
         temperature: float = 0.1,
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
+        schema: Optional[Any] = None,
     ) -> LLMResponse:
         last_msg = messages[-1].content if messages else ""
         
