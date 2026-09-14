@@ -36,6 +36,12 @@ class Settings(BaseModel):
     bedrock_temperature: float = Field(default_factory=lambda: float(os.getenv("COVENANT_BEDROCK_TEMPERATURE", "0.1")))
     bedrock_max_tokens: Optional[int] = Field(default_factory=lambda: int(os.getenv("COVENANT_BEDROCK_MAX_TOKENS")) if os.getenv("COVENANT_BEDROCK_MAX_TOKENS") else None)
 
+    # Gemini Model Provider Configuration
+    gemini_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
+    gemini_model: str = Field(default_factory=lambda: os.getenv("COVENANT_GEMINI_MODEL", "gemini-2.5-flash-lite"))
+    gemini_temperature: float = Field(default_factory=lambda: float(os.getenv("COVENANT_GEMINI_TEMPERATURE", "0.1")))
+    gemini_max_tokens: Optional[int] = Field(default_factory=lambda: int(os.getenv("COVENANT_GEMINI_MAX_TOKENS")) if os.getenv("COVENANT_GEMINI_MAX_TOKENS") else None)
+
 
 settings = Settings()
 

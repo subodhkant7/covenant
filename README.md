@@ -117,6 +117,7 @@ Covenant builds natively on the AWS Strands Agents SDK (`strands-agents`):
   - **Deterministic Provider (`COVENANT_MODEL_PROVIDER=deterministic`) [Default]**: Fully offline, reproducible reasoning provider implementing the Strands `Model` streaming interface for zero-dependency local execution, CI, and evaluation.
   - **Local Ollama Provider (`COVENANT_MODEL_PROVIDER=ollama`)**: Connects to local Ollama servers (`http://localhost:11434`, `llama3:latest`).
   - **Amazon Bedrock Provider (`COVENANT_MODEL_PROVIDER=bedrock`)**: Direct integration with Strands `BedrockModel` (`strands.models.bedrock.BedrockModel`) supporting Claude, Nova, and other Bedrock foundation models via standard AWS credential chains.
+  - **Google Gemini Provider (`COVENANT_MODEL_PROVIDER=gemini`)**: Ultra-low-latency (~0.4s) model provider using `gemini-2.5-flash-lite` via Google Generative Language REST API with native Strands streaming and function-calling support. Configured strictly server-side with zero credentials in frontend or source control.
 
 ### Agentic Reasoning vs. Deterministic Authority
 
@@ -183,7 +184,7 @@ pytest -o asyncio_mode=auto -q tests/test_agentic_benchmark.py tests/test_advers
 uvicorn covenant.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-> **Verified Test Status**: At the time of this submission, the regression suite reports **158 passed, 0 failures** (including 43 evaluation/adversarial benchmark scenarios, private reasoning safety tests, and container readiness verification).
+> **Verified Test Status**: At the time of this submission, the regression suite reports **161 passed, 0 failures** (including 43 evaluation/adversarial benchmark scenarios, private reasoning safety tests, Gemini provider integration, and container readiness verification).
 
 
 ### 4. Frontend Setup
@@ -228,6 +229,23 @@ docker run --rm \
 - **Ephemeral State**: Container storage is ephemeral; replacing or restarting the container reinitializes the database from the synthetic workspace seed.
 - **Production Scaling**: Multi-task / multi-replica production deployments behind a load balancer require migrating persistence to Amazon RDS PostgreSQL or a shared database layer.
 - **Scope**: This container configuration prepares Covenant for single-task AWS ECS/Fargate deployment; live AWS cloud infrastructure deployment is handled separately.
+
+### 6. Live AWS Cloud Deployment (Hackathon Judge Environment)
+
+Covenant is actively deployed and publicly accessible in AWS `us-east-1` for live evaluation:
+
+- **Public Web Application (SPA)**: [http://44.194.255.110/](http://44.194.255.110/)
+- **Public DNS**: [http://ec2-44-194-255-110.compute-1.amazonaws.com](http://ec2-44-194-255-110.compute-1.amazonaws.com)
+- **API Health**: `curl http://44.194.255.110/api/health`
+- **Model Health**: `curl http://44.194.255.110/api/health/model`
+
+**Architecture & Security Highlights**:
+- **Instance**: AWS EC2 `t3.small` (Ubuntu 24.04 LTS, 2 GiB RAM, 30 GB gp3 EBS) in `us-east-1a`.
+- **Model Backend**: Google Gemini API (`gemini-2.5-flash-lite`) providing ultra-low-latency (~0.4s) reasoning and tool selection.
+- **Reverse Proxy**: Nginx proxying port 80 to internal FastAPI runtime on `127.0.0.1:8000` with strict HTTP security headers (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`).
+- **Network Ingress Protection**: Public access is restricted strictly to HTTP/HTTPS ports (80/443). Port 22 (SSH) is locked to the operator's IP; internal application port 8000 is never exposed.
+- **Credential Hygiene**: API keys are isolated on the server in `/etc/covenant/covenant.env` (permissions `600`, owned by system user `covenant`). Zero credentials exist in the client bundle, logs, or repository.
+
 
 ---
 

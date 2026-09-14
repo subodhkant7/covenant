@@ -64,7 +64,10 @@ async def health_model_check():
     provider = settings.model_provider
     status: Dict[str, Any] = {
         "provider": provider,
-        "configured_model": settings.ollama_model if provider == "ollama" else (settings.bedrock_model_id or "deterministic"),
+        "configured_model": (
+            settings.gemini_model if provider == "gemini"
+            else (settings.ollama_model if provider == "ollama" else (settings.bedrock_model_id or "deterministic"))
+        ),
         "fallback_model": settings.ollama_fallback_model if provider == "ollama" else None,
         "secondary_fallback_model": settings.ollama_secondary_fallback_model if provider == "ollama" else None,
         "connectivity": "unknown",

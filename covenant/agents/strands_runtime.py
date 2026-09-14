@@ -435,6 +435,164 @@ class OllamaStrandsModel(Model):
         yield {"output": output_model.model_validate({})}
 
 
+class GeminiStrandsModel(Model):
+    """
+    Strands Model implementation integrating Google Gemini REST API.
+    Used for production deployment with gemini-2.5-flash-lite.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
+        temperature: float = 0.1,
+        max_tokens: Optional[int] = None,
+    ):
+        import os
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
+        self.model_name = model_name or os.getenv("COVENANT_GEMINI_MODEL", "gemini-2.5-flash-lite")
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.config: Dict[str, Any] = {
+            "model_id": self.model_name,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+        }
+
+    def get_config(self) -> Any:
+        return self.config
+
+    def update_config(self, **model_config: Any) -> None:
+        self.config.update(model_config)
+
+    async def stream(
+        self,
+        messages: Any,
+        tool_specs: Any = None,
+        system_prompt: Any = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[StreamEvent, None]:
+        if not self.api_key:
+            logger.warning("GEMINI_API_KEY is not set. Operating in offline mode.")
+            yield {"contentBlockDelta": {"delta": {"text": "[Gemini]: GEMINI_API_KEY missing. Operating in offline mode."}}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+            return
+
+        contents = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            g_role = "model" if role in ("assistant", "model") else "user"
+            if isinstance(content, str):
+                contents.append({"role": g_role, "parts": [{"text": content}]})
+            elif isinstance(content, list):
+                parts = []
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        parts.append({"text": item["text"]})
+                    elif isinstance(item, dict) and "toolUse" in item:
+                        tu = item["toolUse"]
+                        args = tu.get("input", {})
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                pass
+                        parts.append({"functionCall": {"name": tu.get("name"), "args": args}})
+                    elif isinstance(item, dict) and "toolResult" in item:
+                        tr = item["toolResult"]
+                        c = tr.get("content", [])
+                        t_text = c[0].get("text", "") if (isinstance(c, list) and c) else str(c)
+                        parts.append({"functionResponse": {"name": tr.get("name", "tool"), "response": {"result": t_text}}})
+                if parts:
+                    contents.append({"role": g_role, "parts": parts})
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
+        payload: Dict[str, Any] = {
+            "contents": contents,
+            "generationConfig": {
+                "temperature": self.temperature,
+            }
+        }
+        if system_prompt:
+            payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
+        if tool_specs:
+            funcs = []
+            for spec in tool_specs:
+                funcs.append({
+                    "name": spec.get("name"),
+                    "description": spec.get("description", ""),
+                    "parameters": spec.get("inputSchema", {}).get("json", {}),
+                })
+            payload["tools"] = [{"functionDeclarations": funcs}]
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code != 200:
+                    logger.error(f"Gemini API returned HTTP {res.status_code}: {res.text[:200]}")
+                    yield {"contentBlockDelta": {"delta": {"text": f"[Gemini Error]: HTTP {res.status_code}"}}}
+                    yield {"messageStop": {"stopReason": "end_turn"}}
+                    return
+
+                data = res.json()
+                cand = data.get("candidates", [{}])[0]
+                parts = cand.get("content", {}).get("parts", [])
+
+                has_tool_call = False
+                for c_idx, part in enumerate(parts):
+                    if "functionCall" in part:
+                        has_tool_call = True
+                        fc = part["functionCall"]
+                        fn_name = fc.get("name")
+                        fn_args = fc.get("args", {})
+                        tool_use_id = f"tooluse_{uuid.uuid4().hex[:8]}"
+                        yield {
+                            "contentBlockStart": {
+                                "contentBlockIndex": c_idx,
+                                "start": {
+                                    "toolUse": {
+                                        "name": fn_name,
+                                        "toolUseId": tool_use_id,
+                                    }
+                                }
+                            }
+                        }
+                        yield {
+                            "contentBlockDelta": {
+                                "contentBlockIndex": c_idx,
+                                "delta": {
+                                    "toolUse": {
+                                        "input": json.dumps(fn_args),
+                                    }
+                                }
+                            }
+                        }
+                        yield {"contentBlockStop": {"contentBlockIndex": c_idx}}
+                    elif "text" in part:
+                        text_val = strip_private_reasoning_text(part.get("text", ""))
+                        if text_val:
+                            yield {"contentBlockDelta": {"delta": {"text": text_val}}}
+
+                if has_tool_call:
+                    yield {"messageStop": {"stopReason": "tool_use"}}
+                else:
+                    yield {"messageStop": {"stopReason": "end_turn"}}
+        except Exception as e:
+            logger.error(f"Error calling Gemini API: {e}")
+            yield {"contentBlockDelta": {"delta": {"text": f"[Gemini Exception]: {e}"}}}
+            yield {"messageStop": {"stopReason": "end_turn"}}
+
+    async def structured_output(
+        self,
+        output_model: type,
+        prompt: Any,
+        system_prompt: Any = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        yield {"output": output_model.model_validate({})}
+
+
 # ----------------------------------------------------------------------
 # 3. Real Strands Agent Coordinator
 # ----------------------------------------------------------------------
