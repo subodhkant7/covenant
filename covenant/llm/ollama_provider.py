@@ -9,17 +9,29 @@ from covenant.llm.provider import AbstractModelProvider, ChatMessage, LLMRespons
 
 
 class OllamaModelProvider(AbstractModelProvider):
-    """Local LLM provider using Ollama HTTP API."""
+    """Local LLM provider using Ollama HTTP API with graceful multi-model failover."""
 
     def __init__(
         self,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
-        timeout: float = 60.0,
+        fallback_model: Optional[str] = None,
+        secondary_fallback_model: Optional[str] = None,
+        timeout: float = 30.0,
     ):
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model_name = model_name or settings.ollama_model
+        self.fallback_model = fallback_model or settings.ollama_fallback_model
+        self.secondary_fallback_model = secondary_fallback_model or settings.ollama_secondary_fallback_model
         self.timeout = timeout
+        self.fallback_history: List[Dict[str, Any]] = []
+        self._deterministic_fallback = DeterministicFallbackProvider(model_name="deterministic-fallback")
+
+    @property
+    def candidate_models(self) -> List[str]:
+        """Ordered candidate models for runtime execution."""
+        candidates = [self.model_name, self.fallback_model, self.secondary_fallback_model]
+        return [m for m in candidates if m]
 
     async def is_available(self) -> bool:
         """Check if Ollama server is running and reachable."""
@@ -30,6 +42,51 @@ class OllamaModelProvider(AbstractModelProvider):
         except Exception:
             return False
 
+    async def get_diagnostics(self) -> Dict[str, Any]:
+        """Return safe diagnostic metadata without secrets or private prompt data."""
+        reachable = False
+        installed_models = []
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(f"{self.base_url}/api/tags")
+                if res.status_code == 200:
+                    reachable = True
+                    data = res.json()
+                    installed_models = [
+                        {
+                            "name": m.get("name"),
+                            "capabilities": m.get("capabilities", []),
+                        }
+                        for m in data.get("models", [])
+                    ]
+        except Exception as e:
+            reachable = False
+
+        return {
+            "provider": "ollama",
+            "base_url": self.base_url,
+            "configured_model": self.model_name,
+            "fallback_model": self.fallback_model,
+            "secondary_fallback_model": self.secondary_fallback_model,
+            "candidate_models": self.candidate_models,
+            "reachable": reachable,
+            "installed_models": installed_models,
+            "fallback_count": len(self.fallback_history),
+            "recent_fallbacks": self.fallback_history[-5:] if self.fallback_history else [],
+        }
+
+    def _record_fallback(self, attempted: str, reason: str, candidates: List[str], current_idx: int) -> None:
+        """Record sanitized fallback event without sensitive payload data."""
+        import datetime
+        next_model = candidates[current_idx + 1] if current_idx + 1 < len(candidates) else "deterministic-fallback"
+        entry = {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "attempted_model": attempted,
+            "fallback_target": next_model,
+            "reason": str(reason)[:200],
+        }
+        self.fallback_history.append(entry)
+
     async def chat(
         self,
         messages: List[ChatMessage],
@@ -37,30 +94,57 @@ class OllamaModelProvider(AbstractModelProvider):
         max_tokens: Optional[int] = None,
         json_mode: bool = False,
     ) -> LLMResponse:
-        """Execute chat completion via Ollama /api/chat."""
-        payload: Dict[str, Any] = {
-            "model": self.model_name,
-            "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-            },
-        }
-        if json_mode:
-            payload["format"] = "json"
+        """Execute chat completion via Ollama /api/chat with ordered model failover."""
+        candidates = self.candidate_models
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            res = await client.post(f"{self.base_url}/api/chat", json=payload)
-            res.raise_for_status()
-            data = res.json()
+            for idx, model in enumerate(candidates):
+                payload: Dict[str, Any] = {
+                    "model": model,
+                    "messages": [{"role": m.role, "content": m.content} for m in messages],
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                    },
+                }
+                if json_mode:
+                    payload["format"] = "json"
 
-            return LLMResponse(
-                content=data.get("message", {}).get("content", ""),
-                model_name=self.model_name,
-                prompt_tokens=data.get("prompt_eval_count"),
-                completion_tokens=data.get("eval_count"),
-                raw_response=data,
-            )
+                try:
+                    res = await client.post(f"{self.base_url}/api/chat", json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if "error" in data:
+                            self._record_fallback(model, data["error"], candidates, idx)
+                            continue
+
+                        msg_content = data.get("message", {}).get("content", "")
+                        if not msg_content and not data.get("message", {}).get("tool_calls"):
+                            self._record_fallback(model, "empty response content", candidates, idx)
+                            continue
+
+                        return LLMResponse(
+                            content=msg_content,
+                            model_name=model,
+                            prompt_tokens=data.get("prompt_eval_count"),
+                            completion_tokens=data.get("eval_count"),
+                            raw_response=data,
+                        )
+                    else:
+                        self._record_fallback(model, f"HTTP {res.status_code}: {res.text[:100]}", candidates, idx)
+                except Exception as e:
+                    self._record_fallback(model, str(e), candidates, idx)
+
+        # If all Ollama candidates fail or require subscription credits, fall back safely to deterministic provider
+        self._record_fallback("ollama-cluster", "all candidate models exhausted or uncredited", candidates, len(candidates) - 1)
+        det_response = await self._deterministic_fallback.chat(
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            json_mode=json_mode,
+        )
+        det_response.model_name = f"ollama-fallback:{self.model_name}->{det_response.model_name}"
+        return det_response
 
 
 class DeterministicFallbackProvider(AbstractModelProvider):

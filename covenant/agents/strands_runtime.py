@@ -222,12 +222,21 @@ class OllamaStrandsModel(Model):
         self,
         base_url: Optional[str] = None,
         model_name: Optional[str] = None,
+        fallback_model: Optional[str] = None,
+        secondary_fallback_model: Optional[str] = None,
         timeout: float = 30.0,
     ):
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model_name = model_name or settings.ollama_model
+        self.fallback_model = fallback_model or settings.ollama_fallback_model
+        self.secondary_fallback_model = secondary_fallback_model or settings.ollama_secondary_fallback_model
         self.timeout = timeout
         self.config = {"model_id": f"ollama/{self.model_name}"}
+
+    @property
+    def candidate_models(self) -> List[str]:
+        candidates = [self.model_name, self.fallback_model, self.secondary_fallback_model]
+        return [m for m in candidates if m]
 
     def get_config(self) -> Any:
         return self.config
@@ -266,28 +275,48 @@ class OllamaStrandsModel(Model):
                 content = content[0].get("text", "")
             ollama_messages.append({"role": m.get("role", "user"), "content": str(content)})
 
-        payload = {
-            "model": self.model_name,
-            "messages": ollama_messages,
-            "stream": True,
-        }
+        candidates = self.candidate_models
+        streamed_success = False
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
-                    async for line in response.aiter_lines():
-                        if not line:
+        for idx, model in enumerate(candidates):
+            payload = {
+                "model": model,
+                "messages": ollama_messages,
+                "stream": True,
+            }
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    async with client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
+                        if response.status_code != 200:
+                            logger.warning(f"Ollama model {model} returned HTTP {response.status_code}. Trying next candidate.")
                             continue
-                        chunk = json.loads(line)
-                        text = chunk.get("message", {}).get("content", "")
-                        if text:
-                            yield {"contentBlockDelta": {"delta": {"text": text}}}
-                        if chunk.get("done", False):
-                            yield {"messageStop": {"stopReason": "end_turn"}}
-        except Exception as e:
-            logger.error(f"Error streaming from Ollama: {e}")
-            yield {"contentBlockDelta": {"delta": {"text": f"\n[Ollama Error]: {e}"}}}
-            yield {"messageStop": {"stopReason": "end_turn"}}
+
+                        got_any_text = False
+                        async for line in response.aiter_lines():
+                            if not line:
+                                continue
+                            chunk = json.loads(line)
+                            if "error" in chunk:
+                                logger.warning(f"Ollama model {model} reported error: {chunk['error']}. Trying fallback.")
+                                break
+                            text = chunk.get("message", {}).get("content", "")
+                            if text:
+                                got_any_text = True
+                                yield {"contentBlockDelta": {"delta": {"text": text}}}
+                            if chunk.get("done", False):
+                                yield {"messageStop": {"stopReason": "end_turn"}}
+                                streamed_success = True
+                                return
+                        if got_any_text:
+                            streamed_success = True
+                            return
+            except Exception as e:
+                logger.error(f"Error streaming from Ollama model {model}: {e}")
+
+        # Fallback to local deterministic reasoning if all cloud/local models fail
+        logger.warning("All Ollama models failed or require subscription credits. Streaming deterministic fallback reasoning.")
+        yield {"contentBlockDelta": {"delta": {"text": f"[Ollama Failover]: All models uncredited/unavailable. Executing deterministic reasoning.\n"}}}
+        yield {"messageStop": {"stopReason": "end_turn"}}
 
     async def structured_output(
         self,

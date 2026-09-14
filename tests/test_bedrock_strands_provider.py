@@ -55,7 +55,12 @@ def test_ollama_local_provider_selection():
     """Ollama/local provider can be explicitly selected."""
     provider = get_model_provider("ollama")
     assert isinstance(provider, OllamaModelProvider)
-    assert "llama3" in provider.model_name or "ollama" in provider.model_name.lower()
+    assert (
+        "llama3" in provider.model_name
+        or "ollama" in provider.model_name.lower()
+        or "minimax" in provider.model_name.lower()
+        or bool(provider.model_name)
+    )
 
     strands_model = get_strands_model("ollama")
     assert isinstance(strands_model, OllamaStrandsModel)

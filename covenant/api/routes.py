@@ -22,7 +22,7 @@ from covenant.domain.enums import (
     RiskLevel,
 )
 from covenant.domain.models import AgentEvent, Commitment, utc_now
-from covenant.llm.ollama_provider import DeterministicFallbackProvider
+from covenant.llm.factory import get_model_provider
 from covenant.persistence.sqlite_repo import SQLiteCommitmentRepository
 from covenant.state_machine.machine import CommitmentStateMachine
 from covenant.synthetic_data.store import workspace_store
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api")
 repo = SQLiteCommitmentRepository()
 runtime_env: CovenantRuntimeEnvironment = CovenantRuntimeBootstrap.assemble()
 tools = initialize_tools()
-llm = DeterministicFallbackProvider()
+llm = get_model_provider()
 supervisor = SupervisorAgent(llm=llm, tools=tools, commitment_repo=repo, event_repo=repo, runtime_env=runtime_env)
 
 
@@ -55,6 +55,38 @@ class SimulateReplyRequest(BaseModel):
 @router.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "covenant", "version": "0.1.0"}
+
+
+@router.get("/health/model")
+async def health_model_check():
+    """Safe model provider health and diagnostics check without credential disclosure."""
+    from covenant.config import settings
+    provider = settings.model_provider
+    status: Dict[str, Any] = {
+        "provider": provider,
+        "configured_model": settings.ollama_model if provider == "ollama" else (settings.bedrock_model_id or "deterministic"),
+        "fallback_model": settings.ollama_fallback_model if provider == "ollama" else None,
+        "secondary_fallback_model": settings.ollama_secondary_fallback_model if provider == "ollama" else None,
+        "connectivity": "unknown",
+        "tool_calling_supported": True,
+        "details": {},
+    }
+
+    if hasattr(llm, "get_diagnostics"):
+        diag = await llm.get_diagnostics()
+        status["connectivity"] = "connected" if diag.get("reachable") else "offline"
+        status["details"] = {
+            "installed_models": [m.get("name") for m in diag.get("installed_models", [])],
+            "fallback_count": diag.get("fallback_count", 0),
+            "recent_fallbacks": diag.get("recent_fallbacks", []),
+        }
+    elif hasattr(llm, "is_available"):
+        avail = await llm.is_available()
+        status["connectivity"] = "connected" if avail else "offline"
+    else:
+        status["connectivity"] = "ready"
+
+    return status
 
 
 @router.get("/stats")

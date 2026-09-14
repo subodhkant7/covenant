@@ -112,3 +112,43 @@ async def test_api_routes_not_intercepted_by_spa():
         resp = await client.get("/api/unknown_endpoint_xyz")
         assert resp.status_code == 404
         assert "Covenant UI" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_health_model_endpoint():
+    """Verify /api/health/model returns provider diagnostics without exposing secrets."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/health/model")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "provider" in data
+        assert "configured_model" in data
+        assert "connectivity" in data
+        assert "tool_calling_supported" in data
+        # Ensure zero credentials or secret keys are exposed
+        for k, v in data.items():
+            assert "secret" not in str(k).lower()
+            assert "password" not in str(k).lower()
+            assert "key" not in str(k).lower() or k == "connectivity" or "fallback" in k or k == "tool_calling_supported"
+
+
+@pytest.mark.asyncio
+async def test_ollama_provider_failover():
+    """Verify OllamaModelProvider records failover events and falls back gracefully."""
+    from covenant.llm.ollama_provider import OllamaModelProvider
+    from covenant.llm.provider import ChatMessage
+
+    provider = OllamaModelProvider(
+        base_url="http://127.0.0.1:11434",
+        model_name="nonexistent-model-primary",
+        fallback_model="nonexistent-model-fallback",
+        secondary_fallback_model="nonexistent-model-secondary",
+        timeout=1.0,
+    )
+    # Execute chat with unresolvable models; should fall back to deterministic provider without error
+    resp = await provider.chat([ChatMessage(role="user", content="Test prompt for fallback")])
+    assert resp is not None
+    assert "ollama-fallback" in resp.model_name
+    assert provider.fallback_history
+    assert len(provider.fallback_history) >= 1
