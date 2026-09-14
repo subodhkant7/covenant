@@ -12,11 +12,11 @@ authors = [
     { name = "Covenant Engineering Team" }
 ]
 dependencies = [
-    "pydantic>=2.7.0",
-    "fastapi>=0.111.0",
-    "uvicorn>=0.30.0",
-    "httpx>=0.27.0",
-    "strands-agents>=0.1.0",
+    "pydantic>=2.7.0,<3",
+    "fastapi>=0.111.0,<1",
+    "uvicorn>=0.30.0,<1",
+    "httpx>=0.27.0,<1",
+    "strands-agents>=1.54.0,<2",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +36,9 @@ exclude = [
     "frontend*",
     "tests*",
 ]
+
+[tool.setuptools.package-data]
+"*" = ["*.sql"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

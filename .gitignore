@@ -1,29 +1,43 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Testing and virtual environments
-.pytest_cache/
-.venv/
-venv/
-env/
-
-# Frontend dependencies and build outputs
-node_modules/
-dist/
-build/
-.vite/
+# Local environment and secrets
+.env
+.env.*
+!.env.example
 
 # SQLite runtime databases and journals
 *.db
 *.db-shm
 *.db-wal
 
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Testing caches
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend dependencies and build outputs
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+build/
+.vite/
+
 # Operating System metadata
 .DS_Store
 
-# Local secrets
-.env
-.env.*
-!.env.example
+# Log files
+*.log
+
+# IDE and editor settings
+.idea/
+.vscode/

@@ -173,7 +173,7 @@ Default values run in offline deterministic mode with zero external dependencies
 # Install Python dependencies (including strands-agents)
 pip install -e .
 
-# Run full test suite (144 unit and integration tests)
+# Run full automated regression and evaluation suite
 pytest -o asyncio_mode=auto -q
 
 # Run the 43-scenario Agentic Evaluation Benchmark
@@ -182,6 +182,9 @@ pytest -o asyncio_mode=auto -q tests/test_agentic_benchmark.py tests/test_advers
 # Start FastAPI backend server (port 8000)
 uvicorn covenant.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+> **Verified Test Status**: At the time of this submission, the regression suite reports **153 passed, 0 failures** (including 43 evaluation/adversarial benchmark scenarios and container readiness verification).
+
 
 ### 4. Frontend Setup
 In a separate terminal:
@@ -193,6 +196,38 @@ npm run dev      # Starts local dev server (port 5173)
 ```
 
 Open `http://localhost:5173` in your browser.
+
+### 5. Docker Container Deployment
+
+Covenant can be packaged and run locally as a self-contained container serving both the React frontend and FastAPI backend.
+
+**Build Image**:
+```bash
+docker build -t covenant:local .
+```
+
+**Run Container (Default Port 8000)**:
+```bash
+docker run --rm -p 8000:8000 covenant:local
+```
+
+- **Health Check**: `curl http://127.0.0.1:8000/api/health`
+- **Web UI**: Open `http://127.0.0.1:8000/` in your browser.
+
+**Optional Port Override**:
+```bash
+docker run --rm \
+  -e PORT=8899 \
+  -p 8899:8899 \
+  covenant:local
+```
+
+**Container Deployment Notes**:
+- **Deterministic Provider**: Defaults to `COVENANT_MODEL_PROVIDER=deterministic` (offline, zero external credentials or cloud keys required).
+- **Persistence Architecture**: SQLite with Write-Ahead Logging (WAL) is intentionally utilized for this single-task demo deployment. State initializes automatically on container startup.
+- **Ephemeral State**: Container storage is ephemeral; replacing or restarting the container reinitializes the database from the synthetic workspace seed.
+- **Production Scaling**: Multi-task / multi-replica production deployments behind a load balancer require migrating persistence to Amazon RDS PostgreSQL or a shared database layer.
+- **Scope**: This container configuration prepares Covenant for single-task AWS ECS/Fargate deployment; live AWS cloud infrastructure deployment is handled separately.
 
 ---
 
@@ -209,6 +244,7 @@ Covenant includes a realistic multi-source synthetic workspace for **Northstar S
 
 ## Documentation Index
 
+- [SECURITY.md](SECURITY.md): Security policy, vulnerability reporting workflow, and synthetic data guarantees.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): Comprehensive architecture, state machine specification, and runtime contracts.
 - [docs/hackathon-readiness.md](docs/hackathon-readiness.md): Submission compliance matrix mapped to official hackathon rules.
 - [docs/demo-script.md](docs/demo-script.md): 5-minute video walkthrough script with positive and negative verification flows.

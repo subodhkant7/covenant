@@ -23,6 +23,10 @@ class Settings(BaseModel):
     system_user_email: str = "alex@northstarstudio.com"
     auto_scan_interval_seconds: int = 300
 
+    # Server & Network Configuration
+    host: str = Field(default_factory=lambda: os.getenv("HOST", "0.0.0.0"))
+    port: int = Field(default_factory=lambda: int(os.getenv("PORT", "8000")))
+
     # Model Provider Configuration
     model_provider: str = Field(default_factory=lambda: os.getenv("COVENANT_MODEL_PROVIDER", "deterministic").lower())
     bedrock_model_id: Optional[str] = Field(default_factory=lambda: os.getenv("COVENANT_BEDROCK_MODEL_ID"))
