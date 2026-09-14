@@ -54,7 +54,7 @@ External Tools & Enterprise Evidence
 | **Frontend** | React 18 + Vite + Tailwind CSS | Real-time Commitment Map, They Owe / We Owe dashboard, Decision Surface |
 | **API Backend** | FastAPI + Uvicorn + Pydantic v2 | REST API, operational monitoring control plane, SSE event streams |
 | **Agent Framework** | **AWS Strands Agents SDK** (`strands-agents`) | Autonomous multi-agent coordination, `@tool` binding, streaming events |
-| **Model Providers** | Pluggable Strands Model Protocol | Deterministic (offline/CI), Ollama (local LLM), Amazon Bedrock (native Strands) |
+| **Model Providers** | Pluggable Strands Model Protocol | Google Gemini API (`gemini-2.5-flash-lite`, live AWS model), Deterministic (offline/CI default), Ollama (local dev), Amazon Bedrock (optional native Strands) |
 | **Governed Runtime** | Governed Agent Runtime | Deterministic state machine, authorization engine, human approval gate, verification gate |
 | **Persistence** | SQLite with Write-Ahead Logging (WAL) | ACID transactional store, audit event trail, idempotent execution log |
 | **Evaluation Suite** | Deterministic Pytest Benchmark | 43 scenarios (25 baseline + 18 adversarial) measuring safety invariants |
@@ -164,3 +164,37 @@ Covenant categorizes commitments by obligation direction:
 - **`WE_OWE_THEM`**: Commitments made by Northstar Studio to clients (e.g. deliverables, reports, brand kits).
 
 This distinction drives priority, risk calculation, and remedy formulation across the operational surface.
+
+---
+
+## 7. Live AWS Cloud Deployment Architecture
+
+Covenant is deployed and operational in **AWS `us-east-1`** for the hackathon judge evaluation:
+
+```text
+Public Internet (Clients / Judges)
+            │
+            ▼  HTTP / HTTPS (Ports 80 / 443)
+      [ Nginx Reverse Proxy ]
+      (Security headers: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection)
+            │
+            ▼  Local HTTP (127.0.0.1:8000)
+    [ FastAPI / Uvicorn Service ]
+    (covenant.service systemd unit, covenant user)
+            │
+      ┌─────┴──────────────────────────────┐
+      ▼                                    ▼
+[ SQLite Database (WAL Mode) ]    [ Strands Agents Runtime ]
+(Atomic transactions, audit logs)         │
+                                          ▼
+                             [ Google Gemini API Adapter ]
+                             (gemini-2.5-flash-lite, ~0.4s latency)
+                             (Key isolated in /etc/covenant/covenant.env)
+```
+
+### Architectural Non-Dependencies:
+- **No Cloud Proprietary DBs**: Does **NOT** use Google Cloud Firestore or Firebase. Persistence is strictly SQLite with Write-Ahead Logging (WAL).
+- **No Message Queue / PubSub**: Does **NOT** use Google Cloud Pub/Sub or AWS SQS/SNS for internal event loops; the governed runtime manages state transitions deterministically in-process.
+- **No Cloud Run / Serverless Containers**: Deployed directly on an **AWS EC2 `t3.small`** instance running Ubuntu 24.04 LTS.
+- **No Live Ollama Dependency on EC2**: Ollama is supported for local offline development only; the live EC2 instance uses the lightweight Google Gemini API adapter to eliminate memory pressure.
+- **No Live Bedrock Model Dependency**: Amazon Bedrock remains an optional provider path in code, but is not used as the live production model.

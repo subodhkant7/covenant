@@ -55,41 +55,39 @@ Covenant solves this by separating **agent reasoning**, **deterministic governan
 
 ## System Architecture
 
-Covenant pairs the reasoning and tool execution capabilities of the **AWS Strands Agents SDK** with a deterministic **Governed Agent Runtime**:
+Covenant strictly separates probabilistic intelligence from deterministic authority:
+
+- **Strands Agents reason and propose**: Semantic extraction, multi-source evidence corroboration, gap detection, and remedy drafting.
+- **The deterministic runtime governs**: State machine transitions, immutable policy rules (e.g. `RULE-EXT-COMM` requiring human approval), and cryptographic idempotency.
+- **Authorized tools execute**: Controlled dispatch of emails, calendar checks, and ticket queries ($T_{\text{exec}}$) through deterministic interfaces.
+- **Fresh external evidence verifies**: The non-bypassable `VerificationGate` ($T_{\text{proof}} > T_{\text{exec}}$) prevents self-declared fulfillment.
 
 ```text
-User / Operator
-      │
-      ▼
-Covenant UI / API (FastAPI + React 18 / Vite)
-      │
-      ▼
-SupervisorAgent (Multi-Agent Orchestrator)
-      │
-      ├── CommitmentAgent (Discovery & Semantic Extraction)
-      ├── EvidenceAgent (Corroboration, Gaps & Contradictions)
-      ├── ResolutionAgent (Remedial Action Formulation)
-      ├── PolicyAgent (Autonomy vs Approval Guardrails)
-      └── VerificationAgent (Independent Proof Evaluation)
-      │
-      ▼
-Strands Agents SDK (strands-agents 1.54.0)
-      │  ├── Agent(model=..., tools=..., system_prompt=...)
-      │  └── Native @tool Declarations & Streaming Event Protocol
-      │
-      ▼
-Governed Agent Runtime
-      │
-      ├── Policy / Authorization Engine (Deterministic Guardrails)
-      ├── Human Approval Gate (Mandatory for External / High-Risk)
-      ├── Execution Engine (Controlled Dispatch at T_exec)
-      ├── Idempotency Store (Duplicate & Replay Defense)
-      ├── Persistence Layer (SQLite WAL / Audit Event Log)
-      └── VerificationGate (T_proof > T_exec Independent Verification)
-      │
-      ▼
-External Tools & Enterprise Evidence
-  (Email threads, MSA contracts, invoices, milestone trackers, vendor tickets)
+React 18 / Vite (Interactive Surface)
+        │
+        ▼
+FastAPI (REST API & Control Plane)
+        │
+        ▼
+Strands Agents (strands-agents 1.54.0)
+(CommitmentAgent, EvidenceAgent, ResolutionAgent, PolicyAgent, VerificationAgent)
+        │
+        ▼
+Covenant Deterministic Runtime
+(Policy Engine, Human Approval Gate, Idempotency Store, State Machine)
+        │
+        ▼
+Authorized Tools (Controlled Dispatch at T_exec)
+(Email, contracts, Jira tickets, calendar, vendor milestones)
+        │
+        ▼
+External Evidence (Multi-source independent proof)
+        │
+        ▼
+VerificationGate (T_proof > T_exec Independent Verification)
+        │
+        ▼
+RESOLVED (VERIFIED)
 ```
 
 ---
@@ -114,10 +112,10 @@ Covenant builds natively on the AWS Strands Agents SDK (`strands-agents`):
 - **Specialist Agents**: `CommitmentAgent`, `EvidenceAgent`, `ResolutionAgent`, `PolicyAgent`, `VerificationAgent`, and `SupervisorAgent` all instantiate `strands.Agent`.
 - **Native Tools**: Defined via the Strands `@tool` decorator (`scan_workspace`, `get_commitment_details`, `propose_remediation_action`, `request_human_approval`, `verify_commitment_evidence`).
 - **Pluggable Model Layer**:
-  - **Deterministic Provider (`COVENANT_MODEL_PROVIDER=deterministic`) [Default]**: Fully offline, reproducible reasoning provider implementing the Strands `Model` streaming interface for zero-dependency local execution, CI, and evaluation.
-  - **Local Ollama Provider (`COVENANT_MODEL_PROVIDER=ollama`)**: Connects to local Ollama servers (`http://localhost:11434`, `llama3:latest`).
-  - **Amazon Bedrock Provider (`COVENANT_MODEL_PROVIDER=bedrock`)**: Direct integration with Strands `BedrockModel` (`strands.models.bedrock.BedrockModel`) supporting Claude, Nova, and other Bedrock foundation models via standard AWS credential chains.
-  - **Google Gemini Provider (`COVENANT_MODEL_PROVIDER=gemini`)**: Ultra-low-latency (~0.4s) model provider using `gemini-2.5-flash-lite` via Google Generative Language REST API with native Strands streaming and function-calling support. Configured strictly server-side with zero credentials in frontend or source control.
+  - **Google Gemini Provider (`COVENANT_MODEL_PROVIDER=gemini`) [CURRENT LIVE AWS PRODUCTION MODEL]**: Ultra-low-latency (~0.4s) model provider using `gemini-2.5-flash-lite` via Google Generative Language REST API with native Strands streaming and function-calling support. Configured strictly server-side with zero credentials in frontend or source control.
+  - **Deterministic Provider (`COVENANT_MODEL_PROVIDER=deterministic`) [DEFAULT / OFFLINE / CI EVALUATION]**: Fully offline, reproducible reasoning provider implementing the Strands `Model` streaming interface for zero-dependency local execution, CI, and evaluation benchmark.
+  - **Local Ollama Provider (`COVENANT_MODEL_PROVIDER=ollama`) [LOCAL DEVELOPMENT]**: Connects to local Ollama servers (`http://localhost:11434`, `minimax-m3:cloud`, `llama3:latest`) for offline local experimentation.
+  - **Amazon Bedrock Provider (`COVENANT_MODEL_PROVIDER=bedrock`) [OPTIONAL AWS INTEGRATION PATH]**: Direct integration with Strands `BedrockModel` (`strands.models.bedrock.BedrockModel`) supporting Claude, Nova, and other Bedrock foundation models via standard AWS credential chains.
 
 ### Agentic Reasoning vs. Deterministic Authority
 
@@ -243,8 +241,12 @@ Covenant is actively deployed and publicly accessible in AWS `us-east-1` for liv
 - **Instance**: AWS EC2 `t3.small` (Ubuntu 24.04 LTS, 2 GiB RAM, 30 GB gp3 EBS) in `us-east-1a`.
 - **Model Backend**: Google Gemini API (`gemini-2.5-flash-lite`) providing ultra-low-latency (~0.4s) reasoning and tool selection.
 - **Reverse Proxy**: Nginx proxying port 80 to internal FastAPI runtime on `127.0.0.1:8000` with strict HTTP security headers (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`).
+- **Persistence**: SQLite with Write-Ahead Logging (WAL) providing atomic ACID transaction safety and immutable event auditing.
 - **Network Ingress Protection**: Public access is restricted strictly to HTTP/HTTPS ports (80/443). Port 22 (SSH) is locked to the operator's IP; internal application port 8000 is never exposed.
 - **Credential Hygiene**: API keys are isolated on the server in `/etc/covenant/covenant.env` (permissions `600`, owned by system user `covenant`). Zero credentials exist in the client bundle, logs, or repository.
+- **Architectural Non-Dependencies**: Covenant intentionally does **NOT** use Firestore, Pub/Sub, Firebase, or Cloud Run. It does **NOT** run Ollama on EC2, and does **NOT** use Bedrock as the live production model.
+- **Invariant Enforcement**: Execution success $\neq$ fulfillment. Action execution ($T_{\text{exec}}$) dispatches through authorized tools into `VERIFYING`, and only fresh post-dispatch external evidence ($T_{\text{proof}} > T_{\text{exec}}$) evaluated by the `VerificationGate` can transition state to `RESOLVED (VERIFIED)`.
+
 
 
 ---
